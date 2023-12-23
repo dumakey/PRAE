@@ -1,0 +1,70 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Case folders %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+DATADIR=C:\Users\juan.ramos\PRAE
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Analysis %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+TYPEANALYSIS=SINGLETRAINING   % SINGLETRAINING, SENSANALYSIS, TRAINGENERATE, GENERATE, DATAGEN, PLOTACTIVATIONS
+IMPORTMODEL=0
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Training parameters %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Training parameters
+TRAINSIZE=0.75
+LEARNINGRATE=0.015
+L2REG=0.15
+L1REG=NONE
+DROPOUT=0.3
+EPOCHS=30
+BATCHSIZE=128
+LATENTDIM=20
+ENCHIDDENDIM=(350,50)
+DECHIDDENDIM=(25)
+ACTIVATION=RELU  # NONE, RELU, ELU, GELU, LEAKYRELU, SWISH, SIGMOID, TANH
+% When sensitivity analysis, indicate activations separated by commas --> ACTIVATION=RELU,SWISH
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Dataset Augmentation %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+AUGDATA=1
+AUGDATASIZE=1
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Image processing %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%IMAGERESIZE=(600,400)  % (width, height)
+IMAGERESIZE=(100,100)  % (width, height)
+
+% Pierce ratio
+PIERCESIZE=(30,30) % (Dw,Dh)
+% Rotation
+ROTATION=1
+ROTATIONCENTER=(NONE,NONE)
+ROTATIONANGLE=-90
+% Zoom
+ZOOM=0
+ZOOMFACTOR=1.3
+% Translation
+TRANSLATION=0
+TRANSLATIONDIST=(0,0)
+% Filter
+FILTER=0
+FILTERTYPE=GAUSSIAN
+FILTERPARAM=(SIZE,5,SIGMA,3)
+%FILTERPARAM=(D,20,SIGMACOLOR,5,SIGMASPACE,3)
+% Flip
+FLIP=0
+FLIPTYPE=VERTICAL
+%FLIPTYPE=HORIZONTAL
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Samples generation %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+NSAMPLESGEN=30
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Activation plotting %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+NCOLS=3
+ROWS2COLS=1
+NSAMPLESACT=1
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
