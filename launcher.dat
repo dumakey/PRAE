@@ -6,8 +6,8 @@ DATADIR=C:\Users\juan.ramos\PRAE
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Analysis %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-TYPEANALYSIS=SINGLETRAINING   % SINGLETRAINING, SENSANALYSIS, TRAINGENERATE, GENERATE, DATAGEN, PLOTACTIVATIONS
-IMPORTMODEL=0
+TYPEANALYSIS=GENERATE   % SINGLETRAINING, SENSANALYSIS, TRAINGENERATE, GENERATE, DATAGEN, PLOTACTIVATIONS
+IMPORTMODEL=1
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Training parameters %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 

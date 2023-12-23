@@ -245,7 +245,7 @@ class CGenTrainer:
 
         # Read parameters
         case_dir = self.case_dir
-        casedata = reader.read_case_logfile(os.path.join(case_dir,'Results','pretrained_model','CGVAE.log'))
+        casedata = reader.read_case_logfile(os.path.join(case_dir,'Results','pretrained_model','PRAE.log'))
         n_samples = self.parameters.samples_generation['n_samples']
         training_size = casedata.training_parameters['train_size']
         pierce_size = self.parameters.img_processing['piercesize']
@@ -255,7 +255,11 @@ class CGenTrainer:
             self.singletraining()
 
         if not hasattr(self, 'data_train'):
-            data_train, data_cv, data_test = dataset_processing.get_datasets(case_dir,training_size,img_size,pierce_size)
+            X_train, X_train_p, X_train_pneg, X_cv, X_cv_p, X_cv_pneg, X_test, X_test_p, X_test_pneg = \
+            dataset_processing.get_datasets(case_dir,training_size,img_size,pierce_size)
+            data_train = (X_train, X_train)
+            data_cv = (X_cv, X_cv)
+            data_test = (X_test, X_test)
             for model in self.model.Model:
                 postprocessing.plot_dataset_samples(data_train,model.predict,n_samples,img_size,storage_dir,stage='Train')
                 postprocessing.plot_dataset_samples(data_cv,model.predict,n_samples,img_size,storage_dir,stage='Cross-validation')
@@ -348,7 +352,7 @@ class CGenTrainer:
     def generate_samples(self, parameters):
 
         ## BUILD DECODER ##
-        output_dim = parameters.img_size
+        output_dim = (*parameters.img_size,1)
         latent_dim = parameters.training_parameters['latent_dim']
         alpha = parameters.training_parameters['learning_rate']
         dec_hidden_layers = parameters.training_parameters['dec_hidden_layers']
@@ -374,7 +378,7 @@ class CGenTrainer:
             decoder.set_weights(decoder_weights)
 
             ## SAMPLE IMAGES ##
-            samples = np.zeros([n_samples,np.prod(output_dim)])
+            samples = np.zeros([n_samples,*output_dim])
             for i in range(n_samples):
                 t = tf.random.normal(shape=(1,latent_dim))
                 samples[i,:] = decoder.predict(t,steps=1)
@@ -464,14 +468,14 @@ class CGenTrainer:
                 else:
                     storage_dir = os.path.join(self.case_dir,'Results',str(case_ID),'Model','{}={:.3f}'
                                                .format(sens_var[0],sens_var[1][i]))
-                model_json_name = 'CGVAE_model_{}_{}={}_arquitecture.json'.format(str(case_ID),sens_var[0],str(sens_var[1][i]))
-                model_weights_name = 'CGVAE_model_{}_{}={}_weights.h5'.format(str(case_ID),sens_var[0],str(sens_var[1][i]))
-                model_folder_name = 'CGVAE_model_{}_{}={}'.format(str(case_ID),sens_var[0],str(sens_var[1][i]))
+                model_json_name = 'PRAE_model_{}_{}={}_arquitecture.json'.format(str(case_ID),sens_var[0],str(sens_var[1][i]))
+                model_weights_name = 'PRAE_model_{}_{}={}_weights.h5'.format(str(case_ID),sens_var[0],str(sens_var[1][i]))
+                model_folder_name = 'PRAE_model_{}_{}={}'.format(str(case_ID),sens_var[0],str(sens_var[1][i]))
             else:
                 storage_dir = os.path.join(self.case_dir,'Results',str(case_ID),'Model')
-                model_json_name = 'CGVAE_model_{}_arquitecture.json'.format(str(case_ID))
-                model_weights_name = 'CGVAE_model_{}_weights.h5'.format(str(case_ID))
-                model_folder_name = 'CGVAE_model_{}'.format(str(case_ID))
+                model_json_name = 'PRAE_model_{}_arquitecture.json'.format(str(case_ID))
+                model_weights_name = 'PRAE_model_{}_weights.h5'.format(str(case_ID))
+                model_folder_name = 'PRAE_model_{}'.format(str(case_ID))
 
             if os.path.exists(storage_dir):
                 rmtree(storage_dir)
@@ -494,54 +498,25 @@ class CGenTrainer:
     def reconstruct_model(self, mode='train'):
 
         storage_dir = os.path.join(self.case_dir,'Results','pretrained_model')
-        try:
-            casedata = reader.read_case_logfile(os.path.join(storage_dir,'CGVAE.log'))
-            img_dim = casedata.img_size
-            latent_dim = casedata.training_parameters['latent_dim']
-            enc_hidden_layers = casedata.training_parameters['enc_hidden_layers']
-            dec_hidden_layers = casedata.training_parameters['dec_hidden_layers']
-            activation = casedata.training_parameters['activation']
+        casedata = reader.read_case_logfile(os.path.join(storage_dir,'PRAE.log'))
+        img_dim = casedata.img_size
+        latent_dim = casedata.training_parameters['latent_dim']
+        enc_hidden_layers = casedata.training_parameters['enc_hidden_layers']
+        dec_hidden_layers = casedata.training_parameters['dec_hidden_layers']
+        activation = casedata.training_parameters['activation']
 
-            # Load weights into new model
-            Model = models.VAE(img_dim,latent_dim,enc_hidden_layers,dec_hidden_layers,0.001,0.0,0.0,0.0,activation,
-                               mode)
-            weights_filename = [file for file in os.listdir(storage_dir) if file.endswith('.h5')][0]
-            Model.load_weights(os.path.join(storage_dir,weights_filename))
-            class history_container:
-                pass
-            History = history_container()
-            with open(os.path.join(storage_dir,'History'),'rb') as f:
-                History.history = pickle.load(f)
-            History.epoch = None
-            History.model = Model
-        except:
-            tf.config.run_functions_eagerly(True) # Enable eager execution
-            try:
-                model_folder = next(os.walk(storage_dir))[1][0]
-            except:
-                print('There is no model stored in the folder')
-
-            alpha = self.parameters.training_parameters['learning_rate']
-            loss = models.loss_function
-
-            Model = tf.keras.models.load_model(os.path.join(storage_dir,model_folder),custom_objects={'loss':loss},compile=False)
-            Model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=alpha),loss=lambda x, y: loss,
-                          metrics=[tf.keras.metrics.MeanSquaredError()])
-
-            tf.config.run_functions_eagerly(False) # Disable eager execution
-
-            # Reconstruct history
-            class history_container:
-                pass
-            History = history_container()
-            try:
-                with open(os.path.join(storage_dir,'History'),'rb') as f:
-                    History.history = pickle.load(f)
-                History.epoch = np.arange(1,len(History.history['loss'])+1)
-                History.model = Model
-            except:
-                History.epoch = None
-                History.model = None
+        # Load weights into new model
+        Model = models.VAE(img_dim,latent_dim,enc_hidden_layers,dec_hidden_layers,0.001,0.0,0.0,0.0,activation,
+                           mode)
+        weights_filename = [file for file in os.listdir(storage_dir) if file.endswith('.h5')][0]
+        Model.load_weights(os.path.join(storage_dir,weights_filename))
+        class history_container:
+            pass
+        History = history_container()
+        with open(os.path.join(storage_dir,'History'),'rb') as f:
+            History.history = pickle.load(f)
+        History.epoch = None
+        History.model = Model
 
         return Model, History
 
@@ -561,7 +536,7 @@ class CGenTrainer:
 
         # Load weights into new model
         Model = models.VAE(img_dim,latent_dim,enc_hidden_layers,dec_hidden_layers,0.001,0.0,0.0,0.0,'relu','train')
-        Model.load_weights(os.path.join(storage_dir,'CGVAE_model_weights.h5'))
+        Model.load_weights(os.path.join(storage_dir,'PRAE_model_weights.h5'))
         enc_CNN_last_layer_idx = [idx for (idx,weight) in enumerate(Model.weights) if weight.shape[0] == latent_dim][0]
         encoder_weights = Model.get_weights()[:enc_CNN_last_layer_idx]
         Encoder.set_weights(encoder_weights)
@@ -610,8 +585,8 @@ class CGenTrainer:
                     storage_folder = os.path.join(self.case_dir,'Results',str(case_ID),'Model','{}={}'.format(varname,value))
                 else:
                     storage_folder = os.path.join(self.case_dir,'Results',str(case_ID),'Model','{}={:.3f}'.format(varname,value))
-                with open(os.path.join(storage_folder,'CGVAE.log'),'w') as f:
-                    f.write('CGVAE log file\n')
+                with open(os.path.join(storage_folder,'PRAE.log'),'w') as f:
+                    f.write('PRAE log file\n')
                     f.write('==================================================================================================\n')
                     f.write('->ANALYSIS\n')
                     for item in analysis.items():
@@ -634,8 +609,8 @@ class CGenTrainer:
             training, analysis, architecture = update_log(self.parameters,self.model)
             case_ID = parameters.analysis['case_ID']
             storage_folder = os.path.join(self.case_dir,'Results',str(case_ID))
-            with open(os.path.join(storage_folder,'Model','CGVAE.log'),'w') as f:
-                f.write('CGVAE log file\n')
+            with open(os.path.join(storage_folder,'Model','PRAE.log'),'w') as f:
+                f.write('PRAE log file\n')
                 f.write(
                     '==================================================================================================\n')
                 f.write('->ANALYSIS\n')

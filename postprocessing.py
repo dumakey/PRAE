@@ -28,10 +28,8 @@ def plot_generated_samples(datasets, img_size, storage_dir):
                     ax[ii,jj].axis('off')
             for i in range(n_rows):
                 for j in range(n_cols):
-                    x = np.reshape(dataset[s],(height,width))*255  # Un-scale image
+                    x = np.reshape(dataset[s],(height,width,1)) * 255  # Un-scale image
                     x = x.astype('uint8')
-                    _, x = cv.threshold(x,50,255,cv.THRESH_BINARY)
-                    # x_dec = cv.bitwise_not(x_dec)
                     ax[i,j].imshow(x,cmap='Greys_r')
                     ax[i,j].set_xticks([])
                     ax[i,j].set_yticks([])
@@ -57,7 +55,7 @@ def plot_dataset_samples(dataset, predictor, n_samples, img_size, storage_dir, s
 
     dataset_prep, _ = dataset_processing.preprocess_data(dataset[0],dataset[1])
     width, height = img_size
-    m = dataset[0].shape[0]
+    m = dataset_prep.shape[0]
     
     ## PLOT GENERATED TRAINING DATA ##
     n_rows = 5
@@ -77,18 +75,15 @@ def plot_dataset_samples(dataset, predictor, n_samples, img_size, storage_dir, s
         ax[0,1].title.set_text(stage+'\n')
         for ii in range(n_rows):
             i = randint(0,m-1)
-            # Predict
-            x_unrolled = dataset_prep[i,:].reshape((1,height*width))
-            x_pred = predictor(x_unrolled)
-            x_pred = np.reshape(x_pred,(height,width))*255  # Un-scale image
-            x_pred = x_pred.astype('uint8')
-            _, x_pred = cv.threshold(x_pred,50,255,cv.THRESH_BINARY)
-            # x_pred = cv.bitwise_not(x_pred)
+            # Generate
+            x = dataset_prep[i,:].reshape((1,height,width))
+            x_gen = predictor(x)
+            x_gen = np.reshape(x_gen,(height,width,1))*255  # Un-scale image
+            x_gen = x_gen.astype('uint8')
 
             # Plot
             x = dataset[0][i].reshape((height,width))
-            # x = cv.bitwise_not(x)
-            ax[ii,0].imshow(x_pred,cmap='Greys_r')
+            ax[ii,0].imshow(x_gen,cmap='Greys_r')
             ax[ii,1].imshow(x,cmap='Greys_r')
             s += 1
             if s == n_samples:
