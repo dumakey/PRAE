@@ -141,18 +141,34 @@ class CGenTrainer:
     
     def traingenerate(self):
 
-
-        # Training
         case_dir = self.case_dir
         training_size = self.parameters.training_parameters['train_size']
         batch_size = self.parameters.training_parameters['batch_size']
         img_size = self.parameters.img_size
         pierce_size = self.parameters.img_processing['piercesize']
 
-        self.datasets.data_train, self.datasets.data_cv, self.datasets.data_test = \
+        self.datasets.X_train, self.datasets.X_train_p, self.datasets.X_train_pneg,\
+        self.datasets.X_cv, self.datasets.X_cv_p, self.datasets.X_cv_pneg,\
+        self.datasets.X_test, self.datasets.X_test_p, self.datasets.X_test_pneg= \
         dataset_processing.get_datasets(case_dir,training_size,img_size,pierce_size)
-        self.datasets.dataset_train, self.datasets.dataset_cv, self.datasets.dataset_test = \
-        dataset_processing.get_tensorflow_datasets(self.datasets.data_train,self.datasets.data_cv,self.datasets.data_test,batch_size)
+
+        # Training over the complete picture
+        data_train_c = (self.datasets.X_train,self.datasets.X_train)
+        data_cv_c = (self.datasets.X_cv,self.datasets.X_cv)
+        data_test_c = (self.datasets.X_test,self.datasets.X_test)
+
+        self.datasets.dataset_train_c, self.datasets.dataset_cv_c, self.datasets.dataset_test_c = \
+        dataset_processing.get_tensorflow_datasets(data_train_c,data_cv_c,data_test_c,batch_size)
+
+        '''
+        # Training over the negative-pierce picture
+        data_train_np = (self.datasets.X_train_np, self.datasets.X_train_np)
+        data_cv_np = (self.datasets.X_cv_np, self.datasets.X_cv_np)
+        data_test_np = (self.datasets.X_test_np, self.datasets.X_test_np)
+
+        self.datasets.dataset_train_np, self.datasets.dataset_cv_np, self.datasets.dataset_test_np = \
+        dataset_processing.get_tensorflow_datasets(data_train_np,data_cv_np,data_test_np,batch_size)
+        '''
         if self.model.imported == False:
             self.train_model()
         self.export_model_performance()
@@ -446,7 +462,7 @@ class CGenTrainer:
                 metrics_train = [(metric,h.history[metric][0]) for metric in metrics_name if not metric.startswith('val')]
 
                 rows = [metric[0] for metric in metrics_train]
-                metric_fun = lambda L: np.array([item[1] for item in L])
+                metric_fun = lambda L: np.array([100*item[1] for item in L])
                 metrics_data = np.vstack((metric_fun(metrics_train),metric_fun(metrics_val))).T
                 metrics = pd.DataFrame(index=rows,columns=['Training','CV'],data=metrics_data)
                 metrics.to_csv(os.path.join(storage_dir,metrics_filename),sep=';',decimal='.')
@@ -499,7 +515,7 @@ class CGenTrainer:
 
         storage_dir = os.path.join(self.case_dir,'Results','pretrained_model')
         casedata = reader.read_case_logfile(os.path.join(storage_dir,'PRAE.log'))
-        img_dim = casedata.img_size
+        img_dim = (*casedata.img_size,1)
         latent_dim = casedata.training_parameters['latent_dim']
         enc_hidden_layers = casedata.training_parameters['enc_hidden_layers']
         dec_hidden_layers = casedata.training_parameters['dec_hidden_layers']

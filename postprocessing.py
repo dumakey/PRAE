@@ -76,15 +76,14 @@ def plot_dataset_samples(dataset, predictor, n_samples, img_size, storage_dir, s
         for ii in range(n_rows):
             i = randint(0,m-1)
             # Generate
-            x = dataset_prep[i,:].reshape((1,height,width))
+            x = dataset_prep[i,:].reshape((1,height,width,1))
             x_gen = predictor(x)
             x_gen = np.reshape(x_gen,(height,width,1))*255  # Un-scale image
             x_gen = x_gen.astype('uint8')
 
             # Plot
-            x = dataset[0][i].reshape((height,width))
             ax[ii,0].imshow(x_gen,cmap='Greys_r')
-            ax[ii,1].imshow(x,cmap='Greys_r')
+            ax[ii,1].imshow(x.reshape((height,width)),cmap='Greys_r')
             s += 1
             if s == n_samples:
                 break

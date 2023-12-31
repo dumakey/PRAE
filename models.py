@@ -48,7 +48,8 @@ def loss_function(x, x_decoded, t_mean, t_log_var):
 
     return tf.reduce_mean(-loss + regularisation, axis=0)
 
-def conv2D_block(X, num_channels, f, p, s, dropout, **kwargs):
+def conv2D_block(X, num_channels, f, p, s, dropout,bn=True, **kwargs):
+
     if kwargs:
         parameters = list(kwargs.values())[0]
         l2_reg = parameters['l2_reg']
@@ -59,13 +60,18 @@ def conv2D_block(X, num_channels, f, p, s, dropout, **kwargs):
         l1_reg = 0.0
         activation = 'relu'
 
-    if p != 0:
+    # Apply padding
+    if p == 'same':
+        net = tf.keras.layers.Conv2D(num_channels,kernel_size=f,strides=s,padding='same',
+                                     kernel_regularizer=tf.keras.regularizers.L1L2(l1=l1_reg,l2=l2_reg))(X)
+    elif type(p) == int:
         net = tf.keras.layers.ZeroPadding2D(p)(X)
-    else:
-        net = X
-    net = tf.keras.layers.Conv2D(num_channels,kernel_size=f,strides=s,padding='valid',
-                                 kernel_regularizer=tf.keras.regularizers.L1L2(l1=l1_reg,l2=l2_reg))(net)
-    net = tf.keras.layers.BatchNormalization()(net)
+        net = tf.keras.layers.Conv2D(num_channels,kernel_size=f,strides=s,padding='valid',
+                                     kernel_regularizer=tf.keras.regularizers.L1L2(l1=l1_reg,l2=l2_reg))(net)
+
+    # Apply Batch-Normalization
+    if bn == True:
+        net = tf.keras.layers.BatchNormalization()(net)
 
     if activation == 'leakyrelu':
         rate = 0.3
@@ -85,7 +91,7 @@ def conv2D_block(X, num_channels, f, p, s, dropout, **kwargs):
 
     return net
 
-def conv2Dtranspose_block(X, num_channels, f, s, dropout, **kwargs):
+def conv2Dtranspose_block(X, num_channels, f, p, s, dropout, **kwargs):
 
     if kwargs:
         parameters = list(kwargs.values())[0]
@@ -97,9 +103,15 @@ def conv2Dtranspose_block(X, num_channels, f, s, dropout, **kwargs):
         l1_reg = 0.0
         activation = 'relu'
 
-    net = tf.keras.layers.Conv2DTranspose(num_channels,kernel_size=f,strides=s,padding='same',
-                                        kernel_regularizer=tf.keras.regularizers.L1L2(l1=l1_reg,l2=l2_reg),
-                                        kernel_initializer='glorot_normal')(X)
+    # Apply padding
+    if type(p) == str:
+        net = tf.keras.layers.Conv2DTranspose(num_channels,kernel_size=f,strides=s,padding=p,use_bias=False,
+                                              kernel_regularizer=tf.keras.regularizers.L1L2(l1=l1_reg,l2=l2_reg),
+                                              kernel_initializer='glorot_normal')(X)
+    elif type(p) == int:
+        net = tf.keras.layers.Conv2D(num_channels,kernel_size=f,strides=s,output_padding=p,
+                                     kernel_regularizer=tf.keras.regularizers.L1L2(l1=l1_reg,l2=l2_reg))(X)
+
     net = tf.keras.layers.BatchNormalization()(net)
 
     if activation == 'leakyrelu':
@@ -150,21 +162,19 @@ def get_padding(f, s, nin, nout):
 
 def encoder_cnn(input_dim, latent_dim, hidden_layers, l2_reg=0.0, l1_reg=0.0, dropout=0.0, activation='relu'):
         
-    in_shape = (input_dim[1],input_dim[0])
-    input_shape = tuple(list(in_shape) + [1])
+    input_shape = (input_dim[1],input_dim[0],1)
     X_input = tf.keras.layers.Input(shape=input_shape)
-    net = conv2D_block(X_input,num_channels=17,f=3,p=1,s=1,dropout=dropout,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,'activation':activation})
+    net = conv2D_block(X_input,num_channels=17,f=3,p='same',s=1,dropout=dropout,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,'activation':activation})
     net = tf.keras.layers.MaxPool2D(pool_size=2,strides=2)(net)    
-    net = conv2D_block(net,num_channels=39,f=3,p=1,s=1,dropout=dropout,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,'activation':activation})
+    net = conv2D_block(net,num_channels=39,f=3,p='same',s=2,dropout=dropout,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,'activation':activation})
     net = tf.keras.layers.MaxPool2D(pool_size=2,strides=2)(net)
-    net = conv2D_block(net,num_channels=87,f=3,p=1,s=1,dropout=dropout,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,'activation':activation})
-    net = tf.keras.layers.MaxPool2D(pool_size=2,strides=2)(net)    
-    net = conv2D_block(net,num_channels=87,f=3,p=1,s=1,dropout=dropout,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,'activation':activation})
+    net = conv2D_block(net,num_channels=87,f=3,p='same',s=1,dropout=dropout,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,'activation':activation})
     net = tf.keras.layers.MaxPool2D(pool_size=2,strides=2)(net)
-    net = conv2D_block(net,num_channels=87,f=3,p=1,s=1,dropout=dropout,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,'activation':activation})
-    net = tf.keras.layers.MaxPool2D(pool_size=2,strides=2)(net)
+    #net = conv2D_block(net,num_channels=87,f=3,p=1,s=1,dropout=dropout,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,'activation':activation})
+    #net = tf.keras.layers.MaxPool2D(pool_size=2,strides=2)(net)
+    #net = conv2D_block(net,num_channels=87,f=3,p=1,s=1,dropout=dropout,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,'activation':activation})
+    #net = tf.keras.layers.MaxPool2D(pool_size=2,strides=2)(net)
     net = tf.keras.layers.Flatten()(net)
-    net = tf.keras.layers.Dropout(dropout)(net)
     for layer in hidden_layers:
         net = dense_layer(net,layer,activation,dropout,l1_reg,l2_reg)
     net = tf.keras.layers.Dense(units=2*latent_dim,activation=None,kernel_regularizer=tf.keras.regularizers.L1L2(l1=l1_reg,l2=l2_reg))(net)
@@ -176,23 +186,17 @@ def encoder_cnn(input_dim, latent_dim, hidden_layers, l2_reg=0.0, l1_reg=0.0, dr
 
 def decoder_cnn(output_dim, latent_dim, hidden_layers, l2_reg=0.0, l1_reg=0.0, dropout=0.0, activation='relu'):
 
+    f0 = 32
+    dense_layer0 = (output_dim[1]//2,output_dim[0]//2,f0)
     X_input = tf.keras.layers.Input(shape=latent_dim)
-    net = X_input
-    '''
-    for layer in hidden_layers:
-        net = dense_layer(net,layer,activation,dropout,l1_reg,l2_reg)
-    int_layer = int(np.average(hidden_layers))
-    '''
-    int_layer = 25
-    f0 = 64
-    net = dense_layer(net,int_layer*int_layer*f0,activation,dropout,l1_reg,l2_reg)
-    net = tf.keras.layers.Reshape((int_layer,int_layer,f0))(net)
-    net = conv2Dtranspose_block(net,num_channels=f0,f=5,s=2,dropout=dropout,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,'activation':activation})
+    net = dense_layer(X_input,np.prod(dense_layer0),activation,dropout,l1_reg,l2_reg)
+    net = tf.keras.layers.Reshape(dense_layer0)(net)
+    net = conv2Dtranspose_block(net,num_channels=f0//2,f=5,p='same',s=1,dropout=dropout,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,'activation':activation})
     net = tf.keras.layers.UpSampling2D()(net)
-    net = conv2Dtranspose_block(net,num_channels=f0//2,f=5,s=2,dropout=dropout,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,'activation':activation})
-    #net = conv2Dtranspose_block(net,num_channels=f0//4,f=5,s=2,dropout=dropout,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,'activation':activation})
-    #net = conv2Dtranspose_block(net,num_channels=f0//8,f=5,s=2,dropout=dropout,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,'activation':activation})
-    net = conv2D_block(net,num_channels=1,f=3,p=1,s=2,dropout=dropout,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,'activation':'sigmoid'})
+    net = conv2Dtranspose_block(net,num_channels=f0//4,f=5,p='same',s=2,dropout=dropout,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,'activation':activation})
+    #net = conv2Dtranspose_block(net,num_channels=f0//4,f=5,p='same',s=2,dropout=dropout,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,'activation':activation})
+    #net = conv2Dtranspose_block(net,num_channels=f0//8,f=5,p='same',s=2,dropout=dropout,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,'activation':activation})
+    net = conv2D_block(net,num_channels=1,f=3,p='same',s=2,dropout=0.0,bn=False,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,'activation':'sigmoid'})
 
     decoder = tf.keras.Model(inputs=X_input,outputs=net,name='decoder_cnn')
     decoder.summary()
@@ -204,8 +208,9 @@ def encoder(input_dim, hidden_dim, latent_dim, l2_reg=0.0, l1_reg=0.0, dropout=0
     Encoder network.
     Returns the mean and the log variances of the latent distribution
     '''
-        
+
     encoder = tf.keras.Sequential(name='encoder')
+    encoder.add(tf.keras.layers.Reshape((input_dim,)))
     encoder.add(tf.keras.Input(shape=(input_dim,)))
     for hidden_layer_dim in hidden_dim:
         encoder.add(tf.keras.layers.Dense(hidden_layer_dim,activation=None,kernel_regularizer=tf.keras.regularizers.L1L2(l1=l1_reg,l2=l2_reg)))
@@ -247,8 +252,8 @@ def VAE(input_dim, latent_dim, encoder_hidden_layers, decoder_hidden_layers, alp
 
     in_shape_unrolled = np.prod(input_dim)
 
-    #e = encoder(in_shape_unrolled,encoder_hidden_layers,latent_dim,l2_reg,l1_reg,dropout,activation)
-    e = encoder_cnn(input_dim,latent_dim,encoder_hidden_layers,l2_reg,l1_reg,dropout,activation)
+    e = encoder(in_shape_unrolled,encoder_hidden_layers,latent_dim,l2_reg,l1_reg,dropout,activation)
+    #e = encoder_cnn(input_dim,latent_dim,encoder_hidden_layers,l2_reg,l1_reg,dropout,activation)
     #d = decoder(latent_dim,decoder_hidden_layers,in_shape_unrolled,l2_reg,l1_reg,dropout,activation)
     d = decoder_cnn(input_dim,latent_dim,decoder_hidden_layers,l2_reg,l1_reg,dropout,activation)
 
