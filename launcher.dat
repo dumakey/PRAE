@@ -6,24 +6,26 @@ DATADIR=C:\Users\juan.ramos\PRAE
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Analysis %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-TYPEANALYSIS=TRAINGENERATE   % SINGLETRAINING, SENSANALYSIS, TRAINGENERATE, GENERATE, DATAGEN, PLOTACTIVATIONS
+TYPEANALYSIS=SINGLEPITRAINING   % SINGLEFITRAINING, SINGLEPITRAINING, SENSANALYSIS, TRAINGENERATE, GENERATE, DATAGEN, PLOTACTIVATIONS
 IMPORTMODEL=0
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Training parameters %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % Training parameters
 TRAINSIZE=0.75
-LEARNINGRATE=0.03
-L2REG=0.1
+LEARNINGRATE=0.0001
+L2REG=0.15
 L1REG=NONE
-DROPOUT=0.2
-EPOCHS=30
-BATCHSIZE=32
-LATENTDIM=10
-%ENCHIDDENDIM=(50)
-ENCHIDDENDIM=(100)
-DECHIDDENDIM=(25)
-ACTIVATION=RELU  # NONE, RELU, ELU, GELU, LEAKYRELU, SWISH, SIGMOID, TANH
+L3REG=20
+DROPOUT=0.25
+EPOCHS=2
+EPOCHITER=1
+BATCHSIZE=64
+LATENTDIM=15
+NOISEDIM=1024
+ENCHIDDENDIM=(30)
+DECHIDDENDIM=(30)
+ACTIVATION=LEAKYRELU  # NONE, RELU, ELU, GELU, LEAKYRELU, SWISH, SIGMOID, TANH
 % When sensitivity analysis, indicate activations separated by commas --> ACTIVATION=RELU,SWISH
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Dataset Augmentation %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -34,10 +36,10 @@ AUGDATASIZE=1
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Image processing %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %IMAGERESIZE=(600,400)  % (width, height)
-IMAGERESIZE=(100,100)  % (width, height)
+IMAGERESIZE=(48,48)  % (width, height)
 
 % Pierce ratio
-PIERCESIZE=(30,30) % (Dw,Dh)
+PIERCESIZE=(15,15) % (Dw,Dh)
 % Rotation
 ROTATION=1
 ROTATIONCENTER=(NONE,NONE)

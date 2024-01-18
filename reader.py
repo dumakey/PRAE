@@ -57,6 +57,12 @@ def read_case_setup(launch_filepath):
         matches = re.findall('(\d+)',match.group(1))
         casedata.training_parameters['latent_dim'] = int(matches[0]) if len(matches) == 1 else [int(item) for item in matches]
 
+    # Noise dimension
+    match = re.search('NOISEDIM\s*=\s*(.*)', data)
+    if match:
+        matches = re.findall('(\d+)',match.group(1))
+        casedata.training_parameters['noise_dim'] = int(matches[0]) if len(matches) == 1 else [int(item) for item in matches]
+
     # Encoder hidden dimension
     match = re.search('ENCHIDDENDIM\s*=\s*\((.*)\).*', data)
     if match:
@@ -83,6 +89,15 @@ def read_case_setup(launch_filepath):
         matches = re.findall('(\d+\.?\d*)',match.group(1))
         casedata.training_parameters['learning_rate'] = float(matches[0]) if len(matches) == 1 else [float(item) for item in matches]
 
+    # L1 regularizer
+    match = re.search('L1REG\s*=\s*(.*|NONE)', data)
+    if match:
+        matches = re.findall('(\d+\.?\d*)',match.group(1))
+        if matches:
+            casedata.training_parameters['l1_reg'] = float(matches[0]) if len(matches) == 1 else [float(item) for item in matches]
+        else:
+            casedata.training_parameters['l1_reg'] = 0.0
+
     # L2 regularizer
     match = re.search('L2REG\s*=\s*(.*|NONE)', data)
     if match:
@@ -92,14 +107,14 @@ def read_case_setup(launch_filepath):
         else:
             casedata.training_parameters['l2_reg'] = 0.0
 
-    # L1 regularizer
-    match = re.search('L1REG\s*=\s*(.*|NONE)', data)
+    # L3 regularizer
+    match = re.search('L3REG\s*=\s*(.*|NONE)', data)
     if match:
         matches = re.findall('(\d+\.?\d*)',match.group(1))
         if matches:
-            casedata.training_parameters['l1_reg'] = float(matches[0]) if len(matches) == 1 else [float(item) for item in matches]
+            casedata.training_parameters['l3_reg'] = float(matches[0]) if len(matches) == 1 else [float(item) for item in matches]
         else:
-            casedata.training_parameters['l1_reg'] = 0.0
+            casedata.training_parameters['l3_reg'] = 0.0
 
     # Dropout
     match = re.search('DROPOUT\s*=\s*(.*|NONE)', data)
@@ -117,6 +132,14 @@ def read_case_setup(launch_filepath):
             casedata.training_parameters['epochs'] = 1
         else:
             casedata.training_parameters['epochs'] = int(match.group(1))
+
+    # Number of epoch iters
+    match = re.search('EPOCHITER\s*=\s*(\d+\.?\d*|NONE).*', data)
+    if match:
+        if match.group(1) == 'NONE':
+            casedata.training_parameters['epoch_iter'] = 1
+        else:
+            casedata.training_parameters['epoch_iter'] = int(match.group(1))
 
     # Batch size
     match = re.search('BATCHSIZE\s*=\s*(\d+\.?\d*|NONE).*', data)
@@ -145,10 +168,9 @@ def read_case_setup(launch_filepath):
         casedata.img_resize = tuple(casedata.img_resize)
 
     # Pierce size
-    match = re.search('PIERCESIZE\s*=\s*\((.*)\).*', data)
-    if match:
-        matches = re.findall('(\d+)',match.group(1))
-        casedata.img_processing['piercesize'] = int(matches[0]) if len(matches) == 1 else [int(item) for item in matches]
+    match_dist = re.search('PIERCESIZE\s*=\s*\((\d+|NONE)\,+(\d+|NONE)\).*', data)
+    if match_dist:
+        casedata.img_processing['piercesize'] = tuple((int(match_dist.group(1)),int(match_dist.group(2))))
 
     # Rotation
     match = re.search('ROTATION\s*=\s*(\d).*', data)
@@ -247,6 +269,8 @@ def read_case_logfile(log_filepath):
     casedata.analysis = dict.fromkeys(['case_ID','type', 'import'], None)
     casedata.training_parameters = dict()
     casedata.img_resize = [None,None]
+    casedata.img_processing = {'piercesize': None,
+                               }
 
     ################################################## Analysis ########################################################
     # Case ID
@@ -282,6 +306,12 @@ def read_case_logfile(log_filepath):
         matches = re.findall('(\d+)',match.group(1))
         casedata.training_parameters['latent_dim'] = int(matches[0]) if len(matches) == 1 else [int(item) for item in matches]
 
+    # Noise dimension
+    match = re.search('NOISE DIMENSION\s*=\s*\[*(.*)\]*', data)
+    if match:
+        matches = re.findall('(\d+)',match.group(1))
+        casedata.training_parameters['noise_dim'] = int(matches[0]) if len(matches) == 1 else [int(item) for item in matches]
+
     # Encoder hidden dimension
     match = re.search('ENCODER HIDDEN LAYERS\s*=\s*\[(.*)\].*', data)
     if match:
@@ -308,6 +338,15 @@ def read_case_logfile(log_filepath):
         matches = re.findall('(\d+\.?\d*)',match.group(1))
         casedata.training_parameters['learning_rate'] = float(matches[0]) if len(matches) == 1 else [float(item) for item in matches]
 
+    # L1 regularizer
+    match = re.search('L1 REGULARIZER\s*=\s*\[*(.*|NONE)\]*', data)
+    if match:
+        matches = re.findall('(\d+\.?\d*)',match.group(1))
+        if matches:
+            casedata.training_parameters['l1_reg'] = float(matches[0]) if len(matches) == 1 else [float(item) for item in matches]
+        else:
+            casedata.training_parameters['l1_reg'] = 0.0
+
     # L2 regularizer
     match = re.search('L2 REGULARIZER\s*=\s*\[*(.*|NONE)\]*', data)
     if match:
@@ -317,14 +356,14 @@ def read_case_logfile(log_filepath):
         else:
             casedata.training_parameters['l2_reg'] = 0.0
 
-    # L1 regularizer
-    match = re.search('L1 REGULARIZER\s*=\s*\[*(.*|NONE)\]*', data)
+    # L3 regularizer
+    match = re.search('L3 REGULARIZER\s*=\s*\[*(.*|NONE)\]*',data)
     if match:
         matches = re.findall('(\d+\.?\d*)',match.group(1))
         if matches:
-            casedata.training_parameters['l1_reg'] = float(matches[0]) if len(matches) == 1 else [float(item) for item in matches]
+            casedata.training_parameters['l3_reg'] = float(matches[0]) if len(matches) == 1 else [float(item) for item in matches]
         else:
-            casedata.training_parameters['l1_reg'] = 0.0
+            casedata.training_parameters['l3_reg'] = 0.0
 
     # Dropout
     match = re.search('DROPOUT\s*=\s*\[*(.*|NONE)\]*', data)
@@ -360,5 +399,11 @@ def read_case_logfile(log_filepath):
                 casedata.training_parameters['activation'] = str.lower(matches[0])
             else:
                 casedata.training_parameters['activation'] = [str.lower(item) for item in matches]
+
+    # Pierce size
+    match = re.search('PIERCE SIZE\s*=\s*\((.*)\).*', data)
+    if match:
+        casedata.img_processing['piercesize'] = [int(item) for item in re.findall('\d+',match.group(1))]
+        casedata.img_processing['piercesize'] = tuple(casedata.img_processing['piercesize'])
 
     return casedata

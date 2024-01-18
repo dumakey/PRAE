@@ -95,7 +95,7 @@ def plot_dataset_samples(dataset, predictor, n_samples, img_size, storage_dir, s
         plt.close()
 
 
-def monitor_hidden_layers(img, model, case_dir, figs_per_row=5, rows_to_cols_ratio=1, idx=None):
+def monitor_hidden_layers(img, model, case_dir, case_ID=None, figs_per_row=5, rows_to_cols_ratio=1, idx=None):
 
     if idx:
         storage_dir = os.path.join(case_dir,'Results','pretrained_model','Hidden_activations','Sample_' + str(idx))
@@ -106,7 +106,7 @@ def monitor_hidden_layers(img, model, case_dir, figs_per_row=5, rows_to_cols_rat
         os.makedirs(storage_dir)
 
     # Input preprocessing
-    img = img.reshape((1,img.size))
+    img = img.reshape((1,*img.shape))
     img = 1/255.*img
     img_tensor = tf.convert_to_tensor(img)
 
@@ -157,8 +157,8 @@ def monitor_hidden_layers(img, model, case_dir, figs_per_row=5, rows_to_cols_rat
                 plt.suptitle('Layer: {}'.format(layer_name),fontsize=18)
                 plt.axis('off')
                 plt.imshow(display_grid[j*height*n_rows:(j+1)*height*n_rows,:],aspect='auto',cmap='viridis')   # cmap: plasma / viridis
-                plt.savefig(os.path.join(storage_dir,'Case_{:d}_layer_{:d}_{}_activations_{}.png'.
-                                         format(case_ID,layer_idx,layer_name,(j+1))), dpi=150)
+                plt.savefig(os.path.join(storage_dir,'layer_{:d}_{}_activations_{}.png'.
+                                         format(layer_idx,layer_name,(j+1))), dpi=150)
                 plt.close()
 
         layer_idx += 1
