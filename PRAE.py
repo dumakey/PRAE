@@ -10,12 +10,18 @@ import cv2 as cv
 from random import randint
 import tensorflow as tf
 
+# Disable eager execution (only when training VAE model)
+from tensorflow.python.framework.ops import disable_eager_execution
+
+#disable_eager_execution()
+
 import reader
 import dataset_processing
 import models_VAE
 import models_GAN
 import dataset_augmentation
 import postprocessing
+from preprocessing import ImageTransformer
 
 
 class PRAE:
@@ -28,13 +34,10 @@ class PRAE:
             pass
         class ModelContainer:
             pass
-        class PredictionsContainer:
-            pass
 
         self.parameters = ParameterContainer()
         self.datasets = DatasetContainer()
         self.model = ModelContainer()
-        self.predictions = PredictionsContainer()
 
         # Setup general parameters
         casedata = reader.read_case_setup(launch_file)
@@ -55,18 +58,23 @@ class PRAE:
         # Check for model reconstruction
         if self.parameters.analysis['import'] == True:
             self.model.imported = True
-
-            Generator, Discriminator = self.reconstruct_GAN_model()
             self.model.Model = [self.create_container()]
-            self.model.Model[0].Generator = Generator
-            self.model.Model[0].Discriminator = Discriminator
+
+            modeltype = self.parameters.analysis['model']
+            if modeltype == 'gan':
+                Generator = self.reconstruct_GAN_model()
+                self.model.Model[0].Generator = Generator
+                self.model.Model[0].Discriminator = None
+            elif modeltype == 'vae':
+                self.model.Model[0] = self.reconstruct_VAE_model()
+
         else:
             self.model.imported = False
 
     def __str__(self):
         class_name = type(self).__name__
 
-        return '{}, a class to generate contours'.format(class_name)
+        return '{}, a class to generate images'.format(class_name)
 
     def create_container(self):
 
@@ -81,7 +89,8 @@ class PRAE:
         analysis_list = {
                         'singlefitraining': self.singlefitraining,
                         'singlepitraining': self.singlepitraining,
-                        'sensanalysis': self.sensitivity_analysis_on_training,
+                        'sensanalysis_pi': self.sensitivity_analysis_on_reduced_model,
+                        'sensanalysis_fi': self.sensitivity_analysis_on_full_model,
                         'traingenerate': self.traingenerate,
                         'generate': self.contour_generation,
                         'datagen': self.data_generation,
@@ -90,33 +99,16 @@ class PRAE:
 
         analysis_list[analysis_ID]()
 
-    def sensitivity_analysis_on_training(self):
+    def sensitivity_analysis_on_reduced_model(self):
 
         # Retrieve sensitivity variable
         sens_variable = self.parameters.sens_variable
 
         case_dir = self.case_dir
+        modeltype = self.parameters.analysis['model']
         training_size = self.parameters.training_parameters['train_size']
         batch_size = self.parameters.training_parameters['batch_size']
-        img_size = self.parameters.img_size
-        pierce_size = self.parameters.img_processing['piercesize']
-
-        self.datasets.data_train, self.datasets.data_cv, self.datasets.data_test = \
-        dataset_processing.get_datasets(case_dir,training_size,img_size,pierce_size)
-        self.datasets.dataset_train, self.datasets.dataset_cv, self.datasets.dataset_test = \
-        dataset_processing.get_tensorflow_datasets(self.datasets.data_train,self.datasets.data_cv,self.datasets.data_test,batch_size)
-
-        if self.model.imported == False:
-            self.train_model(sens_variable)
-        self.export_model_performance(sens_variable)
-        self.export_model(sens_variable)
-        self.export_log()
-
-    def singlefitraining(self):
-
-        case_dir = self.case_dir
-        training_size = self.parameters.training_parameters['train_size']
-        batch_size = self.parameters.training_parameters['batch_size']
+        batch_cv_size = self.parameters.training_parameters['batch_val_size']
         img_size = self.parameters.img_size
         pierce_size = self.parameters.img_processing['piercesize']
 
@@ -124,55 +116,58 @@ class PRAE:
         data_train, _, _, data_cv, _, _, data_test, _, _ = \
         dataset_processing.get_datasets(case_dir,training_size,img_size,pierce_size)
 
-        # In case of training a GAN model
-        self.datasets.X_train, self.datasets.X_cv, self.datasets.X_test = \
-        dataset_processing.get_tensorflow_data(data_train,data_cv,data_test,batch_size)
+        # Build datasets
+        if modeltype == 'gan':
+            # In case of training a GAN model
+            self.datasets.X_train, self.datasets.X_cv, self.datasets.X_test = \
+            dataset_processing.get_tensorflow_data(data_train,data_cv,data_test,batch_size,batch_cv_size)
 
-        if self.model.imported == False:
-            self.train_GAN_model()
-        self.export_GAN_model_performance()
-        self.export_GAN_model()
-        self.export_GAN_log()
+            if self.model.imported == False:
+                self.train_reduced_GAN_model(sens_variable)
+            self.export_GAN_model_performance(sens_variable)
+            self.export_GAN_model(sens_variable)
+            self.export_GAN_log()
+        elif modeltype == 'vae':
+            # In case of training a VAE model
+            data_train = (data_train, data_train)
+            data_cv = (data_cv, data_cv)
+            data_test = (data_test, data_test)
 
+            self.datasets.X_train, self.datasets.X_cv, self.datasets.X_test = \
+            dataset_processing.get_tensorflow_datasets(data_train,data_cv,data_test,batch_size)
 
-        '''
-        # In case of training a VAE model
-        data_train = (data_train, data_train)
-        data_cv = (data_cv, data_cv)
-        data_test = (data_test, data_test)
-
-        self.datasets.X_train, self.datasets.X_cv, self.datasets.X_test = \
-        dataset_processing.get_tensorflow_datasets(data_train,data_cv,data_test,batch_size)
-
-        if self.model.imported == False:
-            self.train_VAE_model()
-        self.export_VAE_model_performance()
-        self.export_VAE_model()
-        self.export_VAE_log()
-        '''
-
-    def singlepitraining(self):
-
-        casedata = reader.read_case_logfile(os.path.join(self.case_dir,'Results','pretrained_model','PRAE.log'))
-        training_size = casedata.training_parameters['train_size']
-        batch_size = casedata.training_parameters['batch_size']
-        img_size = casedata.img_size
-        pierce_size = casedata.img_processing['piercesize']
+            if self.model.imported == False:
+                self.train_VAE_model(sens_variable)
+            self.export_VAE_model_performance(sens_variable)
+            self.export_VAE_model(sens_variable)
+            self.export_VAE_log()
         
-        # Load samples
-        data_train, _, data_train_np, data_cv, _, data_cv_np, data_test, _, data_test_np = \
+    def sensitivity_analysis_on_full_model(self):
+
+        # Retrieve sensitivity variable
+        sens_variable = self.parameters.sens_variable
+        
+        casedata = reader.read_case_logfile(os.path.join(self.case_dir,'Results','pretrained_model','PRAE.log'))
+        img_size = casedata.img_size  # the image size is the same of the full-image training
+        training_size = self.parameters.training_parameters['train_size']
+        batch_size = self.parameters.training_parameters['batch_size']
+        batch_cv_size = self.parameters.training_parameters['batch_val_size']
+        pierce_size = self.parameters.img_processing['piercesize']
+        
+        # Load data
+        data_train, data_train_p, _, data_cv, data_cv_p, _, data_test, data_test_p, _ = \
         dataset_processing.get_datasets(self.case_dir,training_size,img_size,pierce_size)
 
         # Retrieve latent vectors for the set of samples (using a pretrained Keras model)
-
         [t_train, t_cv, t_test], encoder = self.generate_latent_samples([data_train,data_cv,data_test],casedata,return_encoder=True)
         
         # build extended dataset
-        data_train_ext = (data_train_np, t_train)
-        data_cv_ext = (data_cv_np, t_cv)
-        data_test_ext = (data_test_np, t_test)
+        data_train_ext = (data_train, data_train_p, t_train)
+        data_cv_ext = (data_cv, data_cv_p, t_cv)
+        data_test_ext = (data_test, data_test_p, t_test)
 
-        X_train, X_cv, X_test = dataset_processing.get_tensorflow_inputs(data_train_ext,data_cv_ext,data_test_ext,batch_size)
+        X_train, X_cv, X_test = dataset_processing.get_tensorflow_inputs(data_train_ext,data_cv_ext,data_test_ext,
+                                                                         batch_size,batch_cv_size)
 
         # For GAN model training
         self.datasets.X_train = X_train
@@ -180,7 +175,83 @@ class PRAE:
         self.datasets.X_test = X_test
 
         if self.model.imported == False:
-            self.train_GAN_model(encoder)
+            self.train_full_GAN_model(encoder,sens_variable)
+        self.export_GAN_model_performance(sens_variable)
+        self.export_GAN_model(sens_variable)
+        self.export_GAN_log()
+
+    def singlefitraining(self):
+
+        case_dir = self.case_dir
+        modeltype = self.parameters.analysis['model']
+        training_size = self.parameters.training_parameters['train_size']
+        batch_size = self.parameters.training_parameters['batch_size']
+        batch_cv_size = self.parameters.training_parameters['batch_val_size']
+        img_size = self.parameters.img_size
+        pierce_size = self.parameters.img_processing['piercesize']
+
+        # Load data
+        data_train, _, _, data_cv, _, _, data_test, _, _ = \
+        dataset_processing.get_datasets(case_dir,training_size,img_size,pierce_size)
+
+        # Build datasets
+        if modeltype == 'gan':
+            # In case of training a GAN model
+            self.datasets.X_train, self.datasets.X_cv, self.datasets.X_test = \
+            dataset_processing.get_tensorflow_data(data_train,data_cv,data_test,batch_size,batch_cv_size)
+
+            if self.model.imported == False:
+                self.train_reduced_GAN_model()
+            self.export_GAN_model_performance()
+            self.export_GAN_model()
+            self.export_GAN_log()
+        elif modeltype == 'vae':
+            # In case of training a VAE model
+            data_train = (data_train, data_train)
+            data_cv = (data_cv, data_cv)
+            data_test = (data_test, data_test)
+
+            self.datasets.X_train, self.datasets.X_cv, self.datasets.X_test = \
+            dataset_processing.get_tensorflow_datasets(data_train,data_cv,data_test,batch_size)
+
+            if self.model.imported == False:
+                self.train_VAE_model()
+            self.export_VAE_model_performance()
+            self.export_VAE_model()
+            self.export_VAE_log()
+        
+
+    def singlepitraining(self):
+
+        casedata = reader.read_case_logfile(os.path.join(self.case_dir,'Results','pretrained_model','PRAE.log'))
+        img_size = casedata.img_size  # the image size is the same of the full-image training
+        training_size = self.parameters.training_parameters['train_size']
+        batch_size = self.parameters.training_parameters['batch_size']
+        batch_cv_size = self.parameters.training_parameters['batch_val_size']
+        pierce_size = self.parameters.img_processing['piercesize']
+        
+        # Load data
+        data_train, data_train_p, _, data_cv, data_cv_p, _, data_test, data_test_p, _ = \
+        dataset_processing.get_datasets(self.case_dir,training_size,img_size,pierce_size)
+
+        # Retrieve latent vectors for the set of samples (using a pretrained Keras model)
+        [t_train, t_cv, t_test], encoder = self.generate_latent_samples([data_train,data_cv,data_test],casedata,return_encoder=True)
+        
+        # build extended dataset
+        data_train_ext = (data_train, data_train_p, t_train)
+        data_cv_ext = (data_cv, data_cv_p, t_cv)
+        data_test_ext = (data_test, data_test_p, t_test)
+
+        X_train, X_cv, X_test = dataset_processing.get_tensorflow_inputs(data_train_ext,data_cv_ext,data_test_ext,
+                                                                         batch_size,batch_cv_size)
+
+        # For GAN model training
+        self.datasets.X_train = X_train
+        self.datasets.X_cv = X_cv
+        self.datasets.X_test = X_test
+
+        if self.model.imported == False:
+            self.train_full_GAN_model(encoder)
         self.export_GAN_model_performance()
         self.export_GAN_model()
         self.export_GAN_log()
@@ -188,43 +259,39 @@ class PRAE:
     def traingenerate(self):
 
         case_dir = self.case_dir
+        modeltype = self.parameters.analysis['model']
         training_size = self.parameters.training_parameters['train_size']
         batch_size = self.parameters.training_parameters['batch_size']
+        batch_cv_size = self.parameters.training_parameters['batch_val_size']
         img_size = self.parameters.img_size
         pierce_size = self.parameters.img_processing['piercesize']
 
-        data_train, data_train_p, data_train_np, data_cv, data_cv_p, data_cv_np, data_test, data_test_p, data_test_np = \
+        data_train, _, _, data_cv, _, _, data_test, _, _ = \
         dataset_processing.get_datasets(case_dir,training_size,img_size,pierce_size)
 
-        '''
-        # In case training a VAE model
-        # Training over the complete picture
-        dataset_train = (data_train, data_train)
-        dataset_cv = (data_cv, data_cv)
-        dataset_test = (data_test, data_test)
-        
-        self.datasets.X_train, self.datasets.X_cv, self.datasets.X_test = \
-        dataset_processing.get_tensorflow_datasets(dataset_train,dataset_cv,dataset_test,batch_size)
-        '''
-        # In case of training a GAN model
-        self.datasets.X_train, self.datasets.X_cv, self.datasets.X_test = \
-        dataset_processing.get_tensorflow_data(data_train,data_cv,data_test,batch_size)
+        if modeltype == 'gan':  # In case of training a GAN model
+            self.datasets.X_train, self.datasets.X_cv, self.datasets.X_test = \
+            dataset_processing.get_tensorflow_data(data_train,data_cv,data_test,batch_size,batch_cv_size)
 
-        '''
-        # Training over the negative-pierce picture
-        data_train_np = (data_train_np, data_train_np)
-        data_cv_np = (data_cv_np, data_cv_np)
-        data_test_np = (data_test_np, data_test_np)
+            if self.model.imported == False:
+                self.train_reduced_GAN_model()
+            self.export_GAN_model_performance()
+            self.export_GAN_model()
+            self.export_GAN_log()
+        elif modeltype == 'vae':     # In case training a VAE model
+            dataset_train = (data_train, data_train)
+            dataset_cv = (data_cv, data_cv)
+            dataset_test = (data_test, data_test)
 
-        self.datasets.X_train_np, self.datasets.X_cv_np, self.datasets.X_test_np = \
-        dataset_processing.get_tensorflow_datasets(data_train_np,data_cv_np,data_test_np,batch_size)
-        '''
-        if self.model.imported == False:
-            self.train_GAN_model()
-        self.export_GAN_model_performance()
-        self.export_GAN_model()
-        self.export_GAN_log()
-        
+            self.datasets.X_train, self.datasets.X_cv, self.datasets.X_test = \
+            dataset_processing.get_tensorflow_datasets(dataset_train,dataset_cv,dataset_test,batch_size,batch_cv_size)
+
+            if self.model.imported == False:
+                self.train_VAE_model()
+            self.export_VAE_model_performance()
+            self.export_VAE_model()
+            self.export_VAE_log()
+
         # Generation
         model_dir = os.path.join(case_dir,'Results',str(self.parameters.analysis['case_ID']),'Model')
         generation_dir = os.path.join(case_dir,'Results','pretrained_model')
@@ -233,7 +300,6 @@ class PRAE:
         copytree(model_dir,generation_dir)
         self.model.imported = True
         self.contour_generation()
-        
 
     def data_generation(self):
 
@@ -249,25 +315,25 @@ class PRAE:
         latent_dim = self.parameters.training_parameters['latent_dim']
         pierce_size = self.parameters.img_processing['piercesize']
         batch_size = self.parameters.training_parameters['batch_size']
+        batch_cv_size = self.parameters.training_parameters['batch_val_size']
         training_size = self.parameters.training_parameters['train_size']
         n = self.parameters.activation_plotting['n_samples']
         figs_per_row = self.parameters.activation_plotting['n_cols']
         rows_to_cols_ratio = self.parameters.activation_plotting['rows2cols_ratio']
 
-        # Generate datasets
+        # Load data
         self.datasets.X_train, self.datasets.X_train_p, self.datasets.X_train_pneg,\
         self.datasets.X_cv, self.datasets.X_cv_p, self.datasets.X_cv_pneg,\
         self.datasets.X_test, self.datasets.X_test_p, self.datasets.X_test_pneg= \
         dataset_processing.get_datasets(case_dir,training_size,img_size,pierce_size)
         
-        # Training over the complete picture
+        # Build datasets
         data_train_c = (self.datasets.X_train,self.datasets.X_train)
         data_cv_c = (self.datasets.X_cv,self.datasets.X_cv)
         data_test_c = (self.datasets.X_test,self.datasets.X_test)
-        
-        
+
         self.datasets.dataset_train, self.datasets.dataset_cv, self.datasets.dataset_test = \
-        dataset_processing.get_tensorflow_datasets(data_train_c,data_cv_c,data_test_c,batch_size)
+        dataset_processing.get_tensorflow_datasets(data_train_c,data_cv_c,data_test_c,batch_size,batch_cv_size)
 
         m_tr = data_train_c[0].shape[0]
         m_cv = data_cv_c[0].shape[0]
@@ -319,6 +385,7 @@ class PRAE:
 
         # Read parameters
         case_dir = self.case_dir
+        modeltype = self.parameters.analysis['model']
         casedata = reader.read_case_logfile(os.path.join(case_dir,'Results','pretrained_model','PRAE.log'))
         n_samples = self.parameters.samples_generation['n_samples']
         training_size = casedata.training_parameters['train_size']
@@ -326,23 +393,24 @@ class PRAE:
         img_size = casedata.img_size
 
         if self.model.imported == False:
-            self.singletraining()
+            self.singlefitraining()
 
-        '''
-        if not hasattr(self, 'data_train'):
-            X_train, X_train_p, X_train_pneg, X_cv, X_cv_p, X_cv_pneg, X_test, X_test_p, X_test_pneg = \
-            dataset_processing.get_datasets(case_dir,training_size,img_size,pierce_size)
-            data_train = (X_train, X_train)
-            data_cv = (X_cv, X_cv)
-            data_test = (X_test, X_test)
-            for model in self.model.Model:
-                postprocessing.plot_dataset_samples(data_train,model.predict,n_samples,img_size,storage_dir,stage='Train')
-                postprocessing.plot_dataset_samples(data_cv,model.predict,n_samples,img_size,storage_dir,stage='Cross-validation')
-                postprocessing.plot_dataset_samples(data_test,model.predict,n_samples,img_size,storage_dir,stage='Test')
-        '''
+        if modeltype == 'gan':
+            X_samples = self.generate_GAN_samples(casedata)
+        elif modeltype == 'vae':
+            if not hasattr(self, 'data_train'):
+                X_train, X_train_p, X_train_pneg, X_cv, X_cv_p, X_cv_pneg, X_test, X_test_p, X_test_pneg = \
+                dataset_processing.get_datasets(case_dir,training_size,img_size,pierce_size)
+                data_train = (X_train, X_train)
+                data_cv = (X_cv, X_cv)
+                data_test = (X_test, X_test)
+                for model in self.model.Model:
+                    postprocessing.plot_dataset_samples(data_train,model.predict,n_samples,img_size,storage_dir,stage='Train')
+                    postprocessing.plot_dataset_samples(data_cv,model.predict,n_samples,img_size,storage_dir,stage='Cross-validation')
+                    postprocessing.plot_dataset_samples(data_test,model.predict,n_samples,img_size,storage_dir,stage='Test')
 
-        ## GENERATE NEW DATA - SAMPLING ##
-        X_samples = self.generate_GAN_samples(casedata)
+            X_samples = self.generate_VAE_samples(casedata)
+
         postprocessing.plot_generated_samples(X_samples,img_size,storage_dir)
 
     def train_VAE_model(self, sens_var=None):
@@ -359,16 +427,12 @@ class PRAE:
         dropout = self.parameters.training_parameters['dropout']
         activation = self.parameters.training_parameters['activation']
 
-        # Disable eager execution (only when training VAE model)
-        from tensorflow.python.framework.ops import disable_eager_execution
-        disable_eager_execution()
-
         self.model.Model = []
         self.model.History = []
         Model = models_VAE.VAE
         if sens_var == None:  # If it is a one-time training
-            self.model.Model.append(Model(input_dim,latent_dim,enc_hidden_layers,dec_hidden_layers,alpha,l2_reg,
-                                               l1_reg,dropout,activation,mode='train'))
+            self.model.Model.append(Model(input_dim,latent_dim,enc_hidden_layers,dec_hidden_layers,alpha,l2_reg,l1_reg,
+                                          dropout,activation,mode='train'))
             self.model.History.append(self.model.Model[-1].fit(self.datasets.X_train,epochs=nepoch,steps_per_epoch=200,
                                                                validation_data=self.datasets.X_cv,validation_steps=None,
                                                                verbose=1))
@@ -429,16 +493,21 @@ class PRAE:
                                                         verbose=1))
 
 
-    def train_GAN_model(self, encoder=None, sens_var=None):
+    def train_full_GAN_model(self, encoder=None, sens_var=None):
 
         # Parameters
-        image_shape = (self.parameters.img_size[1],self.parameters.img_size[0],1)  # (height, width, channels)
+        typeanalysis = self.parameters.analysis['type']
+        if typeanalysis == 'singlefitraining':  # if it is a full-image training, the image size is the one specified in the launch cfg file
+            image_shape = (self.parameters.img_size[1],self.parameters.img_size[0],1)  # (height, width, channels)
+        elif typeanalysis == 'singlepitraining':  # if it is a pierced-image training, the image size is the cropped size
+            image_shape = (self.parameters.img_processing['piercesize'][1],self.parameters.img_processing['piercesize'][0],1)  # (height, width, channels)
         nepoch = self.parameters.training_parameters['epochs']
         epoch_iter = self.parameters.training_parameters['epoch_iter']
         num_iter = nepoch * epoch_iter
-        batch_size = self.parameters.training_parameters['batch_size']
-        batch_shape = (batch_size,*image_shape)
-        sample_shape = (1,*image_shape)
+        batch_train_size = self.parameters.training_parameters['batch_size']
+        batch_shape = (batch_train_size,*image_shape)
+        batch_cv_size = self.parameters.training_parameters['batch_val_size']
+        batch_cv_shape = (batch_cv_size,*image_shape)
         noise_dim = self.parameters.training_parameters['noise_dim']
         latent_dim = self.parameters.training_parameters['latent_dim']
         alpha = self.parameters.training_parameters['learning_rate']
@@ -447,17 +516,19 @@ class PRAE:
         l3_reg = self.parameters.training_parameters['l3_reg']
         dropout = self.parameters.training_parameters['dropout']
         activation = self.parameters.training_parameters['activation']
+        isDatasetEmpty = lambda nelems, batch_size: False if nelems == batch_size else True
 
-        # Define iterating function
-        if self.parameters.analysis['type'] == 'singlefitraining':
+        # Define iterating function depending on the analysis
+        if typeanalysis == 'singlefitraining':
             def batch_generator(iterator):
                 image = iterator.get_next()
+                image_p = None
                 t = None
-                return image, t
-        elif self.parameters.analysis['type'] == 'singlepitraining':
+                return image, image_p, t
+        elif typeanalysis == 'singlepitraining':
             def batch_generator(iterator):
-                image, t = iterator.get_next()
-                return image, t
+                image, image_p, t = iterator.get_next()
+                return image, image_p, t
 
         # Create model containers
         if sens_var != None:
@@ -479,7 +550,11 @@ class PRAE:
         else:
             N = 1
 
-        # List conversion
+        self.model.Model = [self.create_container() for i in range(N)]
+        self.model.History = [self.create_container() for i in range(N)]
+        self.model.Optimizers = [self.create_container() for i in range(N)]
+
+        # List conversion of sensibility parameters
         alpha = [alpha if type(alpha) != list else alpha[i] for i in range(N)]
         noise_dim = [noise_dim if type(noise_dim) != list else noise_dim[i] for i in range(N)]
         l1_reg = [l1_reg if type(l1_reg) != list else l1_reg[i] for i in range(N)]
@@ -487,10 +562,6 @@ class PRAE:
         l3_reg = [l3_reg if type(l3_reg) != list else l3_reg[i] for i in range(N)]
         activation = [activation if type(activation) != list else activation[i] for i in range(N)]
         dropout = [dropout if type(dropout) != list else dropout[i] for i in range(N)]
-
-        self.model.Model = [self.create_container() for i in range(N)]
-        self.model.History = [self.create_container() for i in range(N)]
-        self.model.Optimizers = [self.create_container() for i in range(N)]
 
         for i in range(N):
             # Training variables
@@ -507,12 +578,12 @@ class PRAE:
 
             # Models and functions declaration
             Discriminator = self.model.Model[i].Discriminator = models_GAN.ConditionalDiscriminator(latent_dim,activation[i],l2_reg[i],l1_reg[i],dropout[i])
-            #Discriminator = self.model.Model[i].Discriminator = models_GAN.Discriminator(activation[i],l2_reg[i],l1_reg[i],dropout[i])
             Generator = self.model.Model[i].Generator = models_GAN.Generator(image_shape[:2],activation[i],l2_reg[i],l1_reg[i],dropout[i])
             Encoder = self.model.Model[i].Encoder = encoder
             disc_optimizer = self.model.Optimizers[i].disc_optimizer = models_GAN.optimizer(2*alpha[i])
             gen_optimizer = self.model.Optimizers[i].gen_optimizer = models_GAN.optimizer(alpha[i])
-            loss = models_GAN.loss_function
+            disc_loss = models_GAN.disc_loss_function
+            gen_loss = models_GAN.gen_loss_function
             metric_disc = models_GAN.performance_metric
             metric_gen = models_GAN.performance_metric
 
@@ -530,19 +601,19 @@ class PRAE:
             train_iterator = iter(self.datasets.X_train)
             for j in range(1,num_iter+1):
                 ### Update discriminator
-                real_image_batch, t_batch = batch_generator(train_iterator)  # iterate on dataset: draw image + latent vector (different from None if partial training)
-                noise_batch = tf.random.normal((batch_size,noise_dim[i]))
+                real_f_image_batch, real_p_image_batch, t_batch = batch_generator(train_iterator)  # iterate on dataset: draw image + latent vector (different from None if partial training)
+                noise_batch = tf.random.normal((batch_train_size,noise_dim[i]))
                 fake_image_batch = Generator(noise_batch)
                 # Ground truth labels
-                fake_label_batch = tf.zeros((batch_size,1)) + 0.05 * tf.random.uniform((batch_size,1))
-                real_label_batch = tf.ones((batch_size,1)) + 0.05 * tf.random.uniform((batch_size,1))
+                fake_label_batch = tf.zeros((batch_train_size,1)) + 0.05 * tf.random.uniform((batch_train_size,1))
+                real_label_batch = tf.ones((batch_train_size,1)) + 0.05 * tf.random.uniform((batch_train_size,1))
                 with tf.GradientTape() as tape_disc:
                     # Prediction computations
                     fake_logit_batch = Discriminator(fake_image_batch,t_batch)
-                    real_logit_batch = Discriminator(real_image_batch,t_batch)
+                    real_logit_batch = Discriminator(real_p_image_batch,t_batch)
                     # Loss computation
-                    fake_loss_batch = loss('disc',Discriminator,Encoder,fake_logit_batch,fake_label_batch,real_logit_batch,
-                                           real_label_batch,fake_image_batch,real_image_batch,l3_reg[i])
+                    fake_loss_batch = disc_loss(Discriminator,Encoder,fake_logit_batch,fake_label_batch,real_logit_batch,
+                                           real_label_batch,fake_image_batch,real_f_image_batch,real_p_image_batch,l3_reg[i])
                     disc_loss_batch = fake_loss_batch + sum(Discriminator.losses)
                     # Metric computation
                     fake_metric_batch = metric_disc(fake_logit_batch,fake_label_batch).numpy()
@@ -553,17 +624,15 @@ class PRAE:
                 disc_optimizer.apply_gradients(zip(disc_gradients,Discriminator.trainable_weights))
 
                 # Misleading labels
-                misleading_label_batch = tf.ones((batch_size,1))
+                misleading_label_batch = tf.ones((batch_train_size,1))
 
                 ### Update generator
-                noise_batch = tf.random.normal((batch_size,noise_dim[i]))
+                noise_batch = tf.random.normal((batch_train_size,noise_dim[i]))
                 with tf.GradientTape() as tape_gen:
                     fake_image_batch = Generator(noise_batch)
-                    t_batch = Encoder(fake_image_batch.numpy(),training=False)
-                    # IMPORTANT: the Encoder has been trained on full-size images, and this prediction is on a cropped image
-                    # --> this training on a different kind of dataset can lead to errors on predictions
-                    fake_logit_batch = Discriminator(fake_image_batch,t_batch)
-                    gen_loss_batch = loss('gen',None,None,fake_logit_batch,misleading_label_batch,None,None,None,None,0.0) + sum(Generator.losses)
+                    t_train = tf.random.normal((batch_train_size,latent_dim))
+                    fake_logit_batch = Discriminator(fake_image_batch,t_train)
+                    gen_loss_batch = gen_loss(fake_logit_batch,misleading_label_batch,0.0) + sum(Generator.losses)
                     gen_metric_batch = metric_gen(fake_logit_batch,misleading_label_batch).numpy()
                 gen_gradients = tape_gen.gradient(gen_loss_batch,Generator.trainable_weights)
                 gen_optimizer.apply_gradients(zip(gen_gradients,Generator.trainable_weights))
@@ -583,35 +652,39 @@ class PRAE:
                     self.model.History[i].disc_metric_train[epoch-1] = disc_streaming_metric/epoch_iter
                     self.model.History[i].gen_loss_train[epoch-1] = gen_streaming_loss/epoch_iter
                     self.model.History[i].gen_metric_train[epoch-1] = gen_streaming_metric/epoch_iter
+
                     # Evaluate on cross-validation dataset
+                    datasetEmpty = False
                     niter = 0
                     cv_iterator = iter(self.datasets.X_cv) # create iterator for cross-validation dataset
-                    while niter < 10:
+                    while datasetEmpty == False:
                         ## Evaluate discriminator
-                        image_cv, t_cv = batch_generator(cv_iterator)
-                        real_image_cv = tf.reshape(image_cv,sample_shape)
-                        noise_cv = tf.random.normal((1,noise_dim[i]))
+                        real_f_image_cv, real_p_image_cv, t_cv = batch_generator(cv_iterator)
+                        # compute the batch size
+                        batch_nelems = batch_cv_size if real_p_image_cv.shape[0] == batch_cv_size else real_p_image_cv.shape[0]
+                        noise_cv = tf.random.normal((batch_nelems,noise_dim[i]))
                         fake_image_cv = Generator(noise_cv)
                         # Prediction computations
                         fake_logit_cv = Discriminator(fake_image_cv,t_cv)
-                        real_logit_cv = Discriminator(real_image_cv,t_cv)
+                        real_logit_cv = Discriminator(real_p_image_cv,t_cv)
                         # Ground truth labels
-                        fake_label_cv = tf.zeros((1,1))
-                        real_label_cv = tf.ones((1,1))
+                        fake_label_cv = tf.zeros((batch_nelems,1))
+                        real_label_cv = tf.ones((batch_nelems,1))
                         # Loss computation
-                        disc_loss_cv = loss('disc',Discriminator,Encoder,fake_logit_cv,fake_label_cv,real_logit_cv,real_label_cv,fake_image_cv,real_image_cv,0.0)
+                        disc_loss_cv = disc_loss(Discriminator,Encoder,fake_logit_cv,fake_label_cv,real_logit_cv,
+                                                 real_label_cv,fake_image_cv,real_f_image_cv,real_p_image_cv,0.0)
                         # Metric computation
                         fake_metric_cv = metric_disc(fake_logit_cv,fake_label_cv).numpy()
                         real_metric_cv = metric_disc(real_logit_cv,real_label_cv).numpy()
                         disc_metric_cv = 0.5 * (fake_metric_cv + real_metric_cv)
 
                         ## Evaluate generator
-                        noise_cv = tf.random.normal((1,noise_dim[i]))
+                        noise_cv = tf.random.normal((batch_nelems,noise_dim[i]))
                         fake_image_cv = Generator(noise_cv)
-                        t_cv = Encoder(fake_image_cv.numpy(),training=False)
+                        t_cv = tf.random.normal((batch_nelems,latent_dim))
                         fake_logit_cv = Discriminator(fake_image_cv,t_cv)
-                        misleading_label_cv = tf.ones((1,1))
-                        gen_loss_cv = loss('gen',None,None,fake_logit_batch,misleading_label_cv,None,None,None,None,0.0)
+                        misleading_label_cv = tf.ones((batch_nelems,1))
+                        gen_loss_cv = gen_loss(fake_logit_cv,misleading_label_cv,0.0)
                         gen_metric_cv = metric_disc(fake_logit_cv,misleading_label_cv).numpy()
 
                         disc_streaming_loss_cv += disc_loss_cv
@@ -619,12 +692,230 @@ class PRAE:
                         gen_streaming_loss_cv += gen_loss_cv
                         gen_streaming_metric_cv += gen_metric_cv
                         niter += 1
+                        datasetEmpty = isDatasetEmpty(batch_nelems,batch_cv_size)
 
                     self.model.History[i].disc_loss_cv[epoch-1] = disc_streaming_loss_cv/niter
                     self.model.History[i].disc_metric_cv[epoch-1] = disc_streaming_metric_cv/niter
                     self.model.History[i].gen_loss_cv[epoch-1] = gen_streaming_loss_cv/niter
                     self.model.History[i].gen_metric_cv[epoch-1] = gen_streaming_metric_cv/niter
                     niter = 0
+                    datasetEmpty = False
+                    Discriminator.set_up_training_state()  # cancel regularization terms for discriminator
+                    Generator.set_up_training_state()  # cancel regularization terms for generator
+
+                    # Print results
+                    print('Epoch {}, Discriminator loss (T,CV): ({:.2f},{:.2f}), Discriminator metric (T,CV): ({:.3f},{:.3f}) || '
+                          'Generator loss (T,CV): ({:.2f},{:.2f}), Generator metric (T,CV): ({:.3f},{:.3f})'
+                          .format(epoch,
+                                  self.model.History[i].disc_loss_train[epoch-1],
+                                  self.model.History[i].disc_loss_cv[epoch-1],
+                                  self.model.History[i].disc_metric_train[epoch-1],
+                                  self.model.History[i].disc_metric_cv[epoch-1],
+                                  self.model.History[i].gen_loss_train[epoch-1],
+                                  self.model.History[i].gen_loss_cv[epoch-1],
+                                  self.model.History[i].gen_metric_train[epoch-1],
+                                  self.model.History[i].gen_metric_cv[epoch-1],))
+
+                    # Reset streaming variables
+                    disc_streaming_loss = 0
+                    disc_streaming_loss_cv = 0
+                    disc_streaming_metric = 0
+                    disc_streaming_metric_cv = 0
+                    gen_streaming_loss = 0
+                    gen_streaming_loss_cv = 0
+                    gen_streaming_metric = 0
+                    gen_streaming_metric_cv = 0
+                    epoch += 1
+    def train_reduced_GAN_model(self, encoder=None, sens_var=None):
+
+        # Parameters
+        typeanalysis = self.parameters.analysis['type']
+        image_shape = (self.parameters.img_size[1],self.parameters.img_size[0],1)  # (height, width, channels)
+        nepoch = self.parameters.training_parameters['epochs']
+        epoch_iter = self.parameters.training_parameters['epoch_iter']
+        num_iter = nepoch * epoch_iter
+        batch_train_size = self.parameters.training_parameters['batch_size']
+        batch_shape = (batch_train_size,*image_shape)
+        batch_cv_size = self.parameters.training_parameters['batch_val_size']
+        batch_cv_shape = (batch_cv_size,*image_shape)
+        noise_dim = self.parameters.training_parameters['noise_dim']
+        latent_dim = self.parameters.training_parameters['latent_dim']
+        alpha = self.parameters.training_parameters['learning_rate']
+        l1_reg = self.parameters.training_parameters['l1_reg']
+        l2_reg = self.parameters.training_parameters['l2_reg']
+        l3_reg = self.parameters.training_parameters['l3_reg']
+        dropout = self.parameters.training_parameters['dropout']
+        activation = self.parameters.training_parameters['activation']
+        isDatasetEmpty = lambda nelems, batch_size: False if nelems == batch_size else True
+
+        # Create model containers
+        if sens_var != None:
+            # compute the sweep number
+            if type(alpha) == list:
+                N = len(alpha)
+            elif type(l1_reg) == list:
+                N = len(l1_reg)
+            elif type(l2_reg) == list:
+                N = len(l2_reg)
+            elif type(l3_reg) == list:
+                N = len(l3_reg)
+            elif type(dropout) == list:
+                N = len(dropout)
+            elif type(activation) == list:
+                N = len(activation)
+            elif type(noise_dim) == list:
+                N = len(noise_dim)
+        else:
+            N = 1
+
+        self.model.Model = [self.create_container() for i in range(N)]
+        self.model.History = [self.create_container() for i in range(N)]
+        self.model.Optimizers = [self.create_container() for i in range(N)]
+
+        # List conversion of sensibility parameters
+        alpha = [alpha if type(alpha) != list else alpha[i] for i in range(N)]
+        noise_dim = [noise_dim if type(noise_dim) != list else noise_dim[i] for i in range(N)]
+        l1_reg = [l1_reg if type(l1_reg) != list else l1_reg[i] for i in range(N)]
+        l2_reg = [l2_reg if type(l2_reg) != list else l2_reg[i] for i in range(N)]
+        l3_reg = [l3_reg if type(l3_reg) != list else l3_reg[i] for i in range(N)]
+        activation = [activation if type(activation) != list else activation[i] for i in range(N)]
+        dropout = [dropout if type(dropout) != list else dropout[i] for i in range(N)]
+
+        for i in range(N):
+            # Training variables
+            self.model.History[i].disc_loss_train = np.zeros([nepoch,])
+            self.model.History[i].disc_metric_train = np.zeros([nepoch,])
+            self.model.History[i].gen_loss_train = np.zeros([nepoch,])
+            self.model.History[i].gen_metric_train = np.zeros([nepoch,])
+            # Validation variables
+            self.model.History[i].disc_loss_cv = np.zeros([nepoch,])
+            self.model.History[i].disc_metric_cv = np.zeros([nepoch,])
+            self.model.History[i].gen_loss_cv = np.zeros([nepoch,])
+            self.model.History[i].gen_loss_cv = np.zeros([nepoch,])
+            self.model.History[i].gen_metric_cv = np.zeros([nepoch,])
+
+            # Models and functions declaration
+            #Discriminator = self.model.Model[i].Discriminator = models_GAN.ConditionalDiscriminator(latent_dim,activation[i],l2_reg[i],l1_reg[i],dropout[i])
+            Discriminator = self.model.Model[i].Discriminator = models_GAN.Discriminator(activation[i],l2_reg[i],l1_reg[i],dropout[i])
+            Generator = self.model.Model[i].Generator = models_GAN.Generator(image_shape[:2],activation[i],l2_reg[i],l1_reg[i],dropout[i])
+            disc_optimizer = self.model.Optimizers[i].disc_optimizer = models_GAN.optimizer(2*alpha[i])
+            gen_optimizer = self.model.Optimizers[i].gen_optimizer = models_GAN.optimizer(alpha[i])
+            disc_loss = models_GAN.disc_loss_function
+            gen_loss = models_GAN.gen_loss_function
+            metric_disc = models_GAN.performance_metric
+            metric_gen = models_GAN.performance_metric
+
+            epoch = 1
+            disc_streaming_loss = 0
+            disc_streaming_loss_cv = 0
+            disc_streaming_metric = 0
+            disc_streaming_metric_cv = 0
+            gen_streaming_loss = 0
+            gen_streaming_loss_cv = 0
+            gen_streaming_metric = 0
+            gen_streaming_metric_cv = 0
+
+            # Create iterator
+            train_iterator = iter(self.datasets.X_train)
+            for j in range(1,num_iter+1):
+                ### Update discriminator
+                real_image_batch = train_iterator.get_next()  # iterate on dataset: draw image + latent vector (different from None if partial training)
+                noise_batch = tf.random.normal((batch_train_size,noise_dim[i]))
+                fake_image_batch = Generator(noise_batch)
+                # Ground truth labels
+                fake_label_batch = tf.zeros((batch_train_size,1)) + 0.05 * tf.random.uniform((batch_train_size,1))
+                real_label_batch = tf.ones((batch_train_size,1)) + 0.05 * tf.random.uniform((batch_train_size,1))
+                with tf.GradientTape() as tape_disc:
+                    # Prediction computations
+                    fake_logit_batch = Discriminator(fake_image_batch)
+                    real_logit_batch = Discriminator(real_image_batch)
+                    # Loss computation
+                    fake_loss_batch = disc_loss(Discriminator,None,fake_logit_batch,fake_label_batch,real_logit_batch,
+                                           real_label_batch,fake_image_batch,real_image_batch,None,l3_reg[i])
+                    disc_loss_batch = fake_loss_batch + sum(Discriminator.losses)
+                    # Metric computation
+                    fake_metric_batch = metric_disc(fake_logit_batch,fake_label_batch).numpy()
+                    real_metric_batch = metric_disc(real_logit_batch,real_label_batch).numpy()
+                    disc_metric_batch = 0.5 * (fake_metric_batch + real_metric_batch)
+                # Weights update
+                disc_gradients = tape_disc.gradient(disc_loss_batch,Discriminator.trainable_weights)
+                disc_optimizer.apply_gradients(zip(disc_gradients,Discriminator.trainable_weights))
+
+                # Misleading labels
+                misleading_label_batch = tf.ones((batch_train_size,1))
+
+                ### Update generator
+                noise_batch = tf.random.normal((batch_train_size,noise_dim[i]))
+                with tf.GradientTape() as tape_gen:
+                    fake_image_batch = Generator(noise_batch)
+                    fake_logit_batch = Discriminator(fake_image_batch)
+                    gen_loss_batch = gen_loss(fake_logit_batch,misleading_label_batch,0.0) + sum(Generator.losses)
+                    gen_metric_batch = metric_gen(fake_logit_batch,misleading_label_batch).numpy()
+                gen_gradients = tape_gen.gradient(gen_loss_batch,Generator.trainable_weights)
+                gen_optimizer.apply_gradients(zip(gen_gradients,Generator.trainable_weights))
+
+                disc_streaming_loss += disc_loss_batch
+                disc_streaming_metric += disc_metric_batch
+                gen_streaming_loss += gen_loss_batch
+                gen_streaming_metric += gen_metric_batch
+
+                if j % epoch_iter == 0:
+                    # Cancel regularization terms for discriminator & generator
+                    Discriminator.set_up_CV_state()
+                    Generator.set_up_CV_state()
+
+                    # Evaluate on training dataset
+                    self.model.History[i].disc_loss_train[epoch-1] = disc_streaming_loss/epoch_iter
+                    self.model.History[i].disc_metric_train[epoch-1] = disc_streaming_metric/epoch_iter
+                    self.model.History[i].gen_loss_train[epoch-1] = gen_streaming_loss/epoch_iter
+                    self.model.History[i].gen_metric_train[epoch-1] = gen_streaming_metric/epoch_iter
+
+                    # Evaluate on cross-validation dataset
+                    datasetEmpty = False
+                    niter = 0
+                    cv_iterator = iter(self.datasets.X_cv) # create iterator for cross-validation dataset
+                    while datasetEmpty == False:
+                        ## Evaluate discriminator
+                        real_image_cv = cv_iterator.get_next()
+                        # compute the batch size
+                        batch_nelems = batch_cv_size if real_image_cv.shape[0] == batch_cv_size else real_image_cv.shape[0]
+                        noise_cv = tf.random.normal((batch_nelems,noise_dim[i]))
+                        fake_image_cv = Generator(noise_cv)
+                        # Prediction computations
+                        fake_logit_cv = Discriminator(fake_image_cv)
+                        real_logit_cv = Discriminator(real_image_cv)
+                        # Ground truth labels
+                        fake_label_cv = tf.zeros((batch_nelems,1))
+                        real_label_cv = tf.ones((batch_nelems,1))
+                        # Loss computation
+                        disc_loss_cv = disc_loss(Discriminator,None,fake_logit_cv,fake_label_cv,real_logit_cv,
+                                                 real_label_cv,fake_image_cv,real_image_cv,None,0.0)
+                        # Metric computation
+                        fake_metric_cv = metric_disc(fake_logit_cv,fake_label_cv).numpy()
+                        real_metric_cv = metric_disc(real_logit_cv,real_label_cv).numpy()
+                        disc_metric_cv = 0.5 * (fake_metric_cv + real_metric_cv)
+
+                        ## Evaluate generator
+                        noise_cv = tf.random.normal((batch_nelems,noise_dim[i]))
+                        fake_image_cv = Generator(noise_cv)
+                        fake_logit_cv = Discriminator(fake_image_cv)
+                        misleading_label_cv = tf.ones((batch_nelems,1))
+                        gen_loss_cv = gen_loss(fake_logit_cv,misleading_label_cv,0.0)
+                        gen_metric_cv = metric_disc(fake_logit_cv,misleading_label_cv).numpy()
+
+                        disc_streaming_loss_cv += disc_loss_cv
+                        disc_streaming_metric_cv += disc_metric_cv
+                        gen_streaming_loss_cv += gen_loss_cv
+                        gen_streaming_metric_cv += gen_metric_cv
+                        niter += 1
+                        datasetEmpty = isDatasetEmpty(batch_nelems,batch_cv_size)
+
+                    self.model.History[i].disc_loss_cv[epoch-1] = disc_streaming_loss_cv/niter
+                    self.model.History[i].disc_metric_cv[epoch-1] = disc_streaming_metric_cv/niter
+                    self.model.History[i].gen_loss_cv[epoch-1] = gen_streaming_loss_cv/niter
+                    self.model.History[i].gen_metric_cv[epoch-1] = gen_streaming_metric_cv/niter
+                    niter = 0
+                    datasetEmpty = False
                     Discriminator.set_up_training_state()  # cancel regularization terms for discriminator
                     Generator.set_up_training_state()  # cancel regularization terms for generator
 
@@ -679,7 +970,7 @@ class PRAE:
             decoder.set_weights(decoder_weights)
 
             ## SAMPLE IMAGES ##
-            t = tf.random.normal(shape=(n_samples,noise_dim))
+            t = tf.random.normal(shape=(n_samples,latent_dim))
             samples = decoder.predict(t,steps=1)
             X_samples.append(samples)
 
@@ -1034,23 +1325,19 @@ class PRAE:
 
         storage_dir = os.path.join(self.case_dir,'Results','pretrained_model')
         casedata = reader.read_case_logfile(os.path.join(storage_dir,'PRAE.log'))
-        img_dim = (*casedata.img_size,1)
-        latent_dim = casedata.training_parameters['latent_dim']
-        enc_hidden_layers = casedata.training_parameters['enc_hidden_layers']
-        dec_hidden_layers = casedata.training_parameters['dec_hidden_layers']
+        img_dim = (casedata.img_size[1],casedata.img_size[0],1)  # (height, width, channels)
+        alpha = casedata.training_parameters['learning_rate']
+        noise_dim = casedata.training_parameters['noise_dim']
         activation = casedata.training_parameters['activation']
 
         # Load weights into new models
-        alpha = self.parameters.training_parameters['learning_rate']
-        noise_dim = self.parameters.training_parameters['noise_dim']
-        img_dim = (self.parameters.img_size[1],self.parameters.img_size[0],1)  # (height, width, channels)
-        optimizer = models.optimizer(alpha)
-        loss = models.cost_function()
-        metric = models.base_metric()
-        compilation_parameters = {'optimizer': optimizer, 'loss': loss, 'metric': metric}
+        optimizer = models_GAN.optimizer(alpha)
+        loss = models_GAN.cost_function()
+        metric = models_GAN.base_metric()
+        compilation_parameters = {'optimizer':optimizer,'loss':loss,'metric':metric}
 
         Generator = models_GAN.Generator(img_dim[:2],activation,0.0,0.0,0.0)
-        Generator_keras = models.convert_to_keras_model(Generator,noise_dim,img_dim,compilation_parameters)
+        Generator_keras = models_GAN.convert_to_keras_model(Generator,noise_dim,img_dim,compilation_parameters)
 
         generator_folder = [item for item in os.listdir(storage_dir) if os.path.isdir(os.path.join(storage_dir,item))
                             if item.startswith('PRAE_generator_model')][0]

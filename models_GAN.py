@@ -3,22 +3,32 @@ import numpy as np
 import tensorflow as tf
 
 def cost_function():
+    
+    #cost = -tf.math.reduce_mean(real_logit-fake_logit)
+    cost = tf.keras.losses.BinaryCrossentropy()
+    
+    return cost
 
-    return tf.keras.losses.BinaryCrossentropy()
-
-def loss_function(model, Discriminator, Encoder, fake_logit, fake_label, real_logit, real_label, fake, real, reg):
+def disc_loss_function(Discriminator, Encoder, fake_logit, fake_label, real_logit, real_label, fake, real_f, real_p, reg):
 
     J = cost_function()
-    if model == 'disc':
-        loss = 0.5 * (J(fake_logit,fake_label) + J(real_logit,real_label))
-        #loss = -tf.math.reduce_mean(real_logit-fake_logit)
-        # Mode collapse regularization penalty
-        discriminator_gradient = get_gradient(Discriminator,Encoder,real,fake)
+    loss = 0.5 * (J(fake_logit,fake_label) + J(real_logit,real_label))
+
+    # Mode collapse regularization penalty
+    if reg != 0.0:
+        discriminator_gradient = get_uni_gradient(Discriminator,real_f,fake) if Encoder == None else \
+                                 get_multi_gradient(Discriminator,Encoder,real_f,real_p,fake)
         mode_collapse_reg = gradient_penalty(discriminator_gradient)
-    elif model == 'gen':
-        loss = J(fake_logit,fake_label)
-        #loss = -tf.math.reduce_mean(fake_logit)
-        mode_collapse_reg = tf.constant(0.0)
+        loss += reg * mode_collapse_reg
+
+    return loss
+
+def gen_loss_function(fake_logit, fake_label, reg):
+
+    J = cost_function()
+    loss = J(fake_logit,fake_label)
+    #loss = -tf.math.reduce_mean(fake_logit)
+    mode_collapse_reg = tf.constant(0.0)
 
     return loss + reg * mode_collapse_reg
 
@@ -38,7 +48,7 @@ def performance_metric(logits, labels):
 
     return metric
 
-def get_gradient(Discriminator, Encoder, real_0, fake_0):
+def get_uni_gradient(Discriminator, real_0, fake_0):
     '''
     Return the gradient of the critic's scores with respect to mixes of real and fake images.
     '''
@@ -49,14 +59,36 @@ def get_gradient(Discriminator, Encoder, real_0, fake_0):
     epsilon = tf.Variable(epsilon_0,shape=epsilon_0.get_shape())
     with tf.GradientTape() as tape_gradient:
         mixed_images = real*epsilon + fake*(1 - epsilon)
-        t = Encoder(mixed_images,training=False)
-        mixed_scores = Discriminator(mixed_images,t)   # Calculate the critic's scores on the mixed images
+        mixed_scores = Discriminator(mixed_images)   # Calculate the critic's scores on the mixed images
     gradient = tape_gradient.gradient(target=mixed_scores,sources=mixed_images)
+
+    return [gradient]
+
+
+def get_multi_gradient(Discriminator, Encoder, real_f_0, real_p_0, fake_0):
+    '''
+    Return the gradient of the critic's scores with respect to mixes and latent vector of real and fake images.
+    '''
+    mixed_p_images = tf.Variable(real_p_0,shape=real_p_0.get_shape())
+    real_p = tf.Variable(real_p_0,shape=real_p_0.get_shape())
+    epsilon_p_0 = tf.random.uniform(real_p_0.get_shape())
+    epsilon_p = tf.Variable(epsilon_p_0,shape=epsilon_p_0.get_shape())
+    fake = tf.Variable(fake_0,shape=fake_0.get_shape())
+    real_f = tf.Variable(real_f_0,shape=real_f_0.get_shape())
+    epsilon_f_0 = tf.random.uniform(real_f_0.get_shape())
+    epsilon_f = tf.Variable(epsilon_f_0,shape=epsilon_f_0.get_shape())
+    with tf.GradientTape() as tape_gradient:
+        mixed_p_images = real_p*epsilon_p + fake*(1 - epsilon_p)
+        mixed_f_images = real_f + 0.05*epsilon_f
+        #mixed_f_images = real_f*epsilon_f
+        t = Encoder(mixed_f_images,training=False)
+        mixed_scores = Discriminator(mixed_p_images,t)   # Calculate the critic's scores on the mixed images
+    gradient = tape_gradient.gradient(target=mixed_scores,sources=[mixed_p_images,t])
 
     return gradient
 
 
-def gradient_penalty(gradient):
+def gradient_penalty(gradients):
     '''
     Return the gradient penalty, given a gradient.
     Given a batch of image gradients, you calculate the magnitude of each image's gradient
@@ -66,15 +98,17 @@ def gradient_penalty(gradient):
     Returns:
         penalty: the gradient penalty
     '''
-    # Flatten the gradients so that each row captures one image
-    input_shape = gradient.get_shape()[1:].num_elements()
-    batch_size = gradient.get_shape()[0]
-    gradient = tf.reshape(gradient,(batch_size,input_shape))
+    penalty = tf.constant(0,dtype=tf.float32)
+    for gradient in gradients:
+        # Flatten the gradients so that each row captures one image
+        input_shape = gradient.get_shape()[1:].num_elements()
+        batch_size = gradient.get_shape()[0]
+        gradient = tf.reshape(gradient,(batch_size,input_shape))
 
-    # Calculate the magnitude of every row
-    gradient_norm = tf.math.reduce_euclidean_norm(gradient,axis=1)
-    # Penalize the mean squared distance of the gradient norms from 1
-    penalty = tf.reduce_mean((gradient_norm - tf.ones_like(gradient_norm))**2)
+        # Calculate the magnitude of every row
+        gradient_norm = tf.math.reduce_euclidean_norm(gradient,axis=1)
+        # Penalize the mean squared distance of the gradient norms from 1
+        penalty += tf.reduce_mean((gradient_norm - tf.ones_like(gradient_norm))**2)
 
     return penalty
 

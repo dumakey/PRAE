@@ -7,21 +7,27 @@ from sklearn.model_selection import train_test_split
 from preprocessing import ImageTransformer
 
 
-def preprocess_tf_input(im, t):
+def preprocess_tf_input(im, im_p, t):
 
     im_tf = tf.cast(im,tf.float32)
     im_tf = im_tf/255.
 
+    im_p_tf = tf.cast(im_p,tf.float32)
+    im_p_tf = im_p_tf/255.
+
     t_tf = tf.cast(t,tf.float32)
 
-    return im_tf, t_tf
+    return im_tf, im_p_tf, t_tf
 
-def preprocess_input(im, t):
+def preprocess_input(im, im_p, t):
 
     im = im.astype(np.float32)
     im = im/255.
 
-    return im, t
+    im_p = im_p.astype(np.float32)
+    im_p = im_p/255.
+
+    return im, im_p, t
 
 def preprocess_tf_dataset(im_tilde, im):
 
@@ -158,27 +164,27 @@ def create_input_pipeline(input, is_train=True, num_threads=8, prefetch_buffer=1
 
     return input_tensor
 
-def get_tensorflow_datasets(dataset_train, dataset_cv, dataset_test, batch_size=32):
+def get_tensorflow_datasets(dataset_train, dataset_cv, dataset_test, batch_size=32, batch_cv_size=1):
 
     dataset_tf_train = create_dataset_pipeline(dataset_train,is_train=True,batch_size=batch_size)
-    dataset_tf_cv = create_dataset_pipeline(dataset_cv,is_train=False,batch_size=1)
+    dataset_tf_cv = create_dataset_pipeline(dataset_cv,is_train=False,batch_size=batch_cv_size)
     dataset_test = preprocess_dataset(dataset_test[0],dataset_test[1])
     
     return dataset_tf_train, dataset_tf_cv, dataset_test
 
-def get_tensorflow_inputs(input_train, input_cv, input_test, batch_size=32):
+def get_tensorflow_inputs(input_train, input_cv, input_test, batch_size=32, batch_cv_size=1):
 
     input_tf_train = create_input_pipeline(input_train,is_train=True,batch_size=batch_size)
-    input_tf_cv = create_input_pipeline(input_cv,is_train=False,batch_size=1)
-    input_test = preprocess_input(input_test[0],input_test[1])
+    input_tf_cv = create_input_pipeline(input_cv,is_train=False,batch_size=batch_cv_size)
+    input_test = preprocess_input(input_test[0],input_test[1],input_test[2])
 
     return input_tf_train, input_tf_cv, input_test
     
-def get_tensorflow_data(data_train, data_cv, data_test, batch_size=32):
+def get_tensorflow_data(data_train, data_cv, data_test, batch_size=32, batch_cv_size=1):
 
     data_tf_train = create_data_pipeline(data_train,is_train=True,batch_size=batch_size)
-    data_tf_cv = create_data_pipeline(data_cv,is_train=False,batch_size=1)
-    data_test = preprocess_dataset(data_test)
+    data_tf_cv = create_data_pipeline(data_cv,is_train=False,batch_size=batch_cv_size)
+    data_test = preprocess_data(data_test)
     
     return data_tf_train, data_tf_cv, data_test
     

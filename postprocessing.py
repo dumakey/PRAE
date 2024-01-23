@@ -53,7 +53,7 @@ def plot_generated_samples(datasets, img_size, storage_dir):
 
 def plot_dataset_samples(dataset, predictor, n_samples, img_size, storage_dir, stage='Train'):
 
-    dataset_prep, _ = dataset_processing.preprocess_data(dataset[0],dataset[1])
+    dataset_prep, _ = dataset_processing.preprocess_dataset(dataset[0],dataset[1])
     width, height = img_size
     m = dataset_prep.shape[0]
     
@@ -95,7 +95,7 @@ def plot_dataset_samples(dataset, predictor, n_samples, img_size, storage_dir, s
         plt.close()
 
 
-def monitor_hidden_layers(img, model, case_dir, case_ID=None, figs_per_row=5, rows_to_cols_ratio=1, idx=None):
+def monitor_hidden_layers(img, model, case_dir, figs_per_row=5, rows_to_cols_ratio=1, idx=None):
 
     if idx:
         storage_dir = os.path.join(case_dir,'Results','pretrained_model','Hidden_activations','Sample_' + str(idx))
@@ -119,7 +119,6 @@ def monitor_hidden_layers(img, model, case_dir, case_ID=None, figs_per_row=5, ro
     activations = activation_model.predict(img_tensor,steps=1)
 
     # Plotting
-    figs_per_row = 5
     layer_idx = 1
     for layer_name, layer_activation in zip(layer_names, activations):  # Displays the feature maps
         channel_idx = 0

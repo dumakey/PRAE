@@ -37,6 +37,11 @@ def read_case_setup(launch_filepath):
     if match:
         casedata.analysis['type'] = str.lower(match.group(1))
 
+    # Type of model
+    match = re.search(r'\bMODEL\s*=\s*(\w+).*', data)
+    if match:
+        casedata.analysis['model'] = str.lower(match.group(1))
+
     # Import
     match = re.search('IMPORTMODEL\s*=\s*(\d).*', data)
     if match:
@@ -148,6 +153,14 @@ def read_case_setup(launch_filepath):
             casedata.training_parameters['batch_size'] = None
         else:
             casedata.training_parameters['batch_size'] = int(match.group(1))
+
+    # Batch validation size
+    match = re.search('BATCHVALSIZE\s*=\s*(\d+\.?\d*|NONE).*', data)
+    if match:
+        if match.group(1) == 'NONE':
+            casedata.training_parameters['batch_val_size'] = None
+        else:
+            casedata.training_parameters['batch_val_size'] = int(match.group(1))
 
     # Activation function
     match = re.search('ACTIVATION\s*=\s*((\w+)\s*(,?\s*\w+,?)*)\s*.*', data)
@@ -283,6 +296,11 @@ def read_case_logfile(log_filepath):
     if match:
         casedata.analysis['type'] = str.lower(match.group(1))
 
+    # Type of model
+    match = re.search('MODEL\s*=\s*(\w+).*', data)
+    if match:
+        casedata.analysis['model'] = str.lower(match.group(1))
+
     # Image shape
     match = re.search('INPUT SHAPE\s*=\s*\((.*)\).*', data)
     if match:
@@ -389,6 +407,14 @@ def read_case_logfile(log_filepath):
             casedata.training_parameters['batch_size'] = None
         else:
             casedata.training_parameters['batch_size'] = int(match.group(1))
+
+    # Batch size for validation
+    match = re.search('BATCH VAL SIZE\s*=\s*(\d+\.?\d*|NONE).*', data)
+    if match:
+        if match.group(1) == 'NONE':
+            casedata.training_parameters['batch_val_size'] = None
+        else:
+            casedata.training_parameters['batch_val_size'] = int(match.group(1))
 
     # Activation function
     match = re.search('ACTIVATION\s*=\s*\[*(.*)\]*\s*.*', data)
