@@ -13,9 +13,9 @@ def read_case_setup(launch_filepath):
     casedata.case_dir = None
     casedata.analysis = dict.fromkeys(['case_ID','type', 'import'], None)
     casedata.training_parameters = dict()
-    casedata.img_resize = [None,None]
-    casedata.img_processing = {'piercesize': None,
-                               'rotation': [None, None, None, None],
+    casedata.img_size = [None,None]
+    casedata.pierce_size = [None,None]
+    casedata.img_processing = {'rotation': [None, None, None, None],
                                'translation': [None, None, None],
                                'zoom': [None, None],
                                'filter': [None, None, None, None, None],
@@ -176,14 +176,14 @@ def read_case_setup(launch_filepath):
     # Image resize
     match_dist = re.search('IMAGERESIZE\s*=\s*\((\d+|NONE)\,+(\d+|NONE)\).*', data)
     if match_dist:
-        casedata.img_resize[0] = int(match_dist.group(1))
-        casedata.img_resize[1] = int(match_dist.group(2))
-        casedata.img_resize = tuple(casedata.img_resize)
+        casedata.img_size[0] = int(match_dist.group(1))
+        casedata.img_size[1] = int(match_dist.group(2))
+        casedata.img_size = tuple(casedata.img_size)
 
     # Pierce size
     match_dist = re.search('PIERCESIZE\s*=\s*\((\d+|NONE)\,+(\d+|NONE)\).*', data)
     if match_dist:
-        casedata.img_processing['piercesize'] = tuple((int(match_dist.group(1)),int(match_dist.group(2))))
+        casedata.pierce_size = tuple((int(match_dist.group(1)),int(match_dist.group(2))))
 
     # Rotation
     match = re.search('ROTATION\s*=\s*(\d).*', data)
@@ -281,7 +281,7 @@ def read_case_logfile(log_filepath):
     casedata = setup()
     casedata.analysis = dict.fromkeys(['case_ID','type', 'import'], None)
     casedata.training_parameters = dict()
-    casedata.img_resize = [None,None]
+    casedata.img_size = [None,None]
     casedata.img_processing = {'piercesize': None,
                                }
 
@@ -306,6 +306,12 @@ def read_case_logfile(log_filepath):
     if match:
         casedata.img_size = [int(item) for item in re.findall('\d+',match.group(1))]
         casedata.img_size = tuple(casedata.img_size)
+
+    # Pierce shape
+    match = re.search('PIERCE SHAPE\s*=\s*\((.*)\).*', data)
+    if match:
+        casedata.pierce_size = [int(item) for item in re.findall('\d+',match.group(1))]
+        casedata.pierce_size = tuple(casedata.pierce_size)
 
     # Import
     match = re.search('IMPORTED MODEL\s*=\s*(\d).*', data)
@@ -429,7 +435,7 @@ def read_case_logfile(log_filepath):
     # Pierce size
     match = re.search('PIERCE SIZE\s*=\s*\((.*)\).*', data)
     if match:
-        casedata.img_processing['piercesize'] = [int(item) for item in re.findall('\d+',match.group(1))]
-        casedata.img_processing['piercesize'] = tuple(casedata.img_processing['piercesize'])
+        casedata.pierce_size = [int(item) for item in re.findall('\d+',match.group(1))]
+        casedata.pierce_size = tuple(casedata.pierce_size)
 
     return casedata

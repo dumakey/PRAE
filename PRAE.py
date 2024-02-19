@@ -44,7 +44,8 @@ class PRAE:
         self.parameters.analysis = casedata.analysis
         self.parameters.training_parameters = casedata.training_parameters
         self.parameters.img_processing = casedata.img_processing
-        self.parameters.img_size = casedata.img_resize
+        self.parameters.img_size = casedata.img_size
+        self.parameters.pierce_size = casedata.pierce_size
         self.parameters.samples_generation = casedata.samples_generation
         self.parameters.data_augmentation = casedata.data_augmentation
         self.parameters.activation_plotting = casedata.activation_plotting
@@ -110,7 +111,7 @@ class PRAE:
         batch_size = self.parameters.training_parameters['batch_size']
         batch_cv_size = self.parameters.training_parameters['batch_val_size']
         img_size = self.parameters.img_size
-        pierce_size = self.parameters.img_processing['piercesize']
+        pierce_size = self.parameters.pierce_size
 
         # Load data
         data_train, _, _, data_cv, _, _, data_test, _, _ = \
@@ -152,7 +153,7 @@ class PRAE:
         training_size = self.parameters.training_parameters['train_size']
         batch_size = self.parameters.training_parameters['batch_size']
         batch_cv_size = self.parameters.training_parameters['batch_val_size']
-        pierce_size = self.parameters.img_processing['piercesize']
+        pierce_size = self.parameters.pierce_size
         
         # Load data
         data_train, data_train_p, _, data_cv, data_cv_p, _, data_test, data_test_p, _ = \
@@ -188,7 +189,7 @@ class PRAE:
         batch_size = self.parameters.training_parameters['batch_size']
         batch_cv_size = self.parameters.training_parameters['batch_val_size']
         img_size = self.parameters.img_size
-        pierce_size = self.parameters.img_processing['piercesize']
+        pierce_size = self.parameters.pierce_size
 
         # Load data
         data_train, _, _, data_cv, _, _, data_test, _, _ = \
@@ -228,7 +229,7 @@ class PRAE:
         training_size = self.parameters.training_parameters['train_size']
         batch_size = self.parameters.training_parameters['batch_size']
         batch_cv_size = self.parameters.training_parameters['batch_val_size']
-        pierce_size = self.parameters.img_processing['piercesize']
+        pierce_size = self.parameters.pierce_size
         
         # Load data
         data_train, data_train_p, _, data_cv, data_cv_p, _, data_test, data_test_p, _ = \
@@ -264,7 +265,7 @@ class PRAE:
         batch_size = self.parameters.training_parameters['batch_size']
         batch_cv_size = self.parameters.training_parameters['batch_val_size']
         img_size = self.parameters.img_size
-        pierce_size = self.parameters.img_processing['piercesize']
+        pierce_size = self.parameters.pierce_size
 
         data_train, _, _, data_cv, _, _, data_test, _, _ = \
         dataset_processing.get_datasets(case_dir,training_size,img_size,pierce_size)
@@ -313,7 +314,7 @@ class PRAE:
         case_dir = self.case_dir
         img_size = (*self.parameters.img_size,1)
         latent_dim = self.parameters.training_parameters['latent_dim']
-        pierce_size = self.parameters.img_processing['piercesize']
+        pierce_size = self.parameters.pierce_size
         batch_size = self.parameters.training_parameters['batch_size']
         batch_cv_size = self.parameters.training_parameters['batch_val_size']
         training_size = self.parameters.training_parameters['train_size']
@@ -386,11 +387,15 @@ class PRAE:
         # Read parameters
         case_dir = self.case_dir
         modeltype = self.parameters.analysis['model']
-        casedata = reader.read_case_logfile(os.path.join(case_dir,'Results','pretrained_model','PRAE.log'))
         n_samples = self.parameters.samples_generation['n_samples']
-        training_size = casedata.training_parameters['train_size']
-        pierce_size = self.parameters.img_processing['piercesize']
-        img_size = casedata.img_size
+        training_size = self.parameters.training_parameters['train_size']
+        casedata = reader.read_case_logfile(os.path.join(case_dir,'Results','pretrained_model','PRAE.log'))
+        typeanalysis = casedata.analysis['type']
+        if typeanalysis == 'singlepitraining':
+            img_size = casedata.pierce_size  # (height, width, channels)
+        else:
+            img_size = casedata.img_size  # (height, width, channels)
+        pierce_size = casedata.pierce_size
 
         if self.model.imported == False:
             self.singlefitraining()
@@ -500,7 +505,7 @@ class PRAE:
         if typeanalysis == 'singlefitraining':  # if it is a full-image training, the image size is the one specified in the launch cfg file
             image_shape = (self.parameters.img_size[1],self.parameters.img_size[0],1)  # (height, width, channels)
         elif typeanalysis == 'singlepitraining':  # if it is a pierced-image training, the image size is the cropped size
-            image_shape = (self.parameters.img_processing['piercesize'][1],self.parameters.img_processing['piercesize'][0],1)  # (height, width, channels)
+            image_shape = (self.parameters.pierce_size[1],self.parameters.pierce_size[0],1)  # (height, width, channels)
         nepoch = self.parameters.training_parameters['epochs']
         epoch_iter = self.parameters.training_parameters['epoch_iter']
         num_iter = nepoch * epoch_iter
@@ -1325,7 +1330,11 @@ class PRAE:
 
         storage_dir = os.path.join(self.case_dir,'Results','pretrained_model')
         casedata = reader.read_case_logfile(os.path.join(storage_dir,'PRAE.log'))
-        img_dim = (casedata.img_size[1],casedata.img_size[0],1)  # (height, width, channels)
+        typeanalysis = casedata.analysis['type']
+        if typeanalysis == 'singlepitraining':
+            img_dim = (casedata.pierce_size[1],casedata.pierce_size[0],1)  # (height, width, channels)
+        else:
+            img_dim = (casedata.img_size[1],casedata.img_size[0],1)  # (height, width, channels)
         alpha = casedata.training_parameters['learning_rate']
         noise_dim = casedata.training_parameters['noise_dim']
         activation = casedata.training_parameters['activation']
@@ -1350,7 +1359,7 @@ class PRAE:
 
         def update_log(parameters, model):
             training = OrderedDict()
-            training['PIERCE SIZE'] = parameters.img_processing['piercesize']
+            training['PIERCE SIZE'] = parameters.pierce_size
             training['TRAINING SIZE'] = parameters.training_parameters['train_size']
             training['LEARNING RATE'] = parameters.training_parameters['learning_rate']
             training['L2 REGULARIZER'] = parameters.training_parameters['l2_reg']
@@ -1453,12 +1462,14 @@ class PRAE:
             training['NUMBER OF EPOCHS'] = parameters.training_parameters['epochs']
             training['BATCH SIZE'] = parameters.training_parameters['batch_size']
             training['NOISE DIMENSION'] = parameters.training_parameters['noise_dim']
+            training['LATENT DIMENSION'] = parameters.training_parameters['noise_dim']
             training['DISCRIMINATOR OPTIMIZER'] = [optimizer.disc_optimizer._name for optimizer in model.Optimizers]
             training['GENERATOR OPTIMIZER'] = [optimizer.gen_optimizer._name for optimizer in model.Optimizers]
 
             analysis = OrderedDict()
             analysis['CASE ID'] = parameters.analysis['case_ID']
             analysis['ANALYSIS'] = parameters.analysis['type']
+            analysis['MODEL'] = parameters.analysis['model']
             analysis['IMPORTED MODEL'] = parameters.analysis['import']
             analysis['DISCRIMINATOR LAST TRAINING LOSS'] = ['{:.3f}'.format(history.disc_loss_train[-1]) for history in
                                                             model.History]
@@ -1470,6 +1481,7 @@ class PRAE:
 
             architecture = OrderedDict()
             architecture['INPUT SHAPE'] = parameters.img_size
+            architecture['PIERCE SHAPE'] = parameters.pierce_size
 
             return training, analysis, architecture
 

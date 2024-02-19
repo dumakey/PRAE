@@ -48,23 +48,49 @@ def loss_function(x, x_decoded, t_mean, t_log_var):
 
     return tf.reduce_mean(-loss + regularisation, axis=0)
 
-def conv2D_block(X, num_channels, f, p, s, dropout,bn=True, **kwargs):
+def conv2D_block(X, num_channels, f, p, s,bn=True, **kwargs):
 
     if kwargs:
         parameters = list(kwargs.values())[0]
         l2_reg = parameters['l2_reg']
         l1_reg = parameters['l1_reg']
         activation = parameters['activation']
+        dropout = parameters['dropout']
         res = parameters['res']
         s_res = parameters['s_res']
     else:
         l2_reg = 0.0
         l1_reg = 0.0
         activation = 'relu'
+        dropout = 0.0
         res = None
         s_res = None
+        
+    # Activation layer & weights initializers
+    if activation == 'leakyrelu':
+        rate = 0.2
+        act_fun = tf.keras.layers.LeakyReLU(rate)
+        weights_init = tf.keras.initializers.LecunNormal()
+    elif activation == 'swish':
+        act_fun = tf.keras.layers.Activation('swish')
+        weights_init = tf.keras.initializers.HeNormal()
+    elif activation == 'elu':
+        act_fun = tf.keras.layers.ELU
+        weights_init = tf.keras.initializers.HeNormal()
+    elif activation == 'tanh':
+        act_fun = tf.keras.activations.tanh
+        weights_init = tf.keras.initializers.GlorotNormal()
+    elif activation == 'sigmoid':
+        act_fun = tf.keras.activations.sigmoid
+        weights_init = tf.keras.initializers.GlorotNormal()
+    elif activation == 'linear':
+        act_fun = tf.keras.activations('linear')
+        weights_init = tf.keras.initializers.GlorotNormal()
+    else:
+        act_fun = tf.keras.layers.Activation('relu')
+        weights_init = tf.keras.initializers.HeNormal()
 
-    # Apply padding
+    # Padding & conv block
     if p == 'same':
         net = tf.keras.layers.Conv2D(num_channels,kernel_size=f,strides=s,padding='same',use_bias=True,
                                      kernel_regularizer=tf.keras.regularizers.L1L2(l1=l1_reg,l2=l2_reg))(X)
@@ -73,46 +99,63 @@ def conv2D_block(X, num_channels, f, p, s, dropout,bn=True, **kwargs):
         net = tf.keras.layers.Conv2D(num_channels,kernel_size=f,strides=s,padding='valid',use_bias=True,
                                      kernel_regularizer=tf.keras.regularizers.L1L2(l1=l1_reg,l2=l2_reg))(net)
 
-    # Apply Batch-Normalization
-    if bn == True:
-        net = tf.keras.layers.BatchNormalization()(net)
-
     if res != None:
         res = tf.keras.layers.Conv2D(num_channels,kernel_size=1,strides=s_res,padding='same',use_bias=True,
-                                     kernel_regularizer=tf.keras.regularizers.L1L2(l1=l1_reg,l2=l2_reg))(res)
+                                     kernel_regularizer=tf.keras.regularizers.L1L2(l1=l1_reg,l2=l2_reg),
+                                     kernel_initializer=weights_init)(res)
         net = tf.keras.layers.Add()([net,res])
 
-    if activation == 'leakyrelu':
-        rate = 0.3
-        net = tf.keras.layers.LeakyReLU(rate)(net)
-    elif activation == 'swish':
-        net = tf.keras.layers.Activation('swish')(net)
-    elif activation == 'elu':
-        net = tf.keras.layers.ELU(net)
-    elif activation == 'tanh':
-        net = tf.keras.activations.tanh(net)
-    elif activation == 'sigmoid':
-        net = tf.keras.activations.sigmoid(net)
-    elif activation == 'linear':
-        net = tf.keras.activations('linear')(net)
-    else:
-        net = tf.keras.layers.Activation('relu')(net)
+    # Batch-Normalization
+    if bn == True:
+        net = tf.keras.layers.BatchNormalization()(net)        
+    
+    # Activation function
+    net = act_fun(net)
+    
+    # Dropout
+    net = tf.keras.layers.Dropout(dropout)(net)
 
     return net
 
-def conv2Dtranspose_block(X, num_channels, f, p, s, dropout, **kwargs):
+def conv2Dtranspose_block(X, num_channels, f, p, s, **kwargs):
 
     if kwargs:
         parameters = list(kwargs.values())[0]
         l2_reg = parameters['l2_reg']
         l1_reg = parameters['l1_reg']
         activation = parameters['activation']
+        dropout = parameters['dropout']
     else:
         l2_reg = 0.0
         l1_reg = 0.0
         activation = 'relu'
+        dropout = 0.0
 
-    # Apply padding
+    # Activation layer & weights initializers
+    if activation == 'leakyrelu':
+        rate = 0.2
+        act_fun = tf.keras.layers.LeakyReLU(rate)
+        weights_init = tf.keras.initializers.LecunNormal()
+    elif activation == 'swish':
+        act_fun = tf.keras.layers.Activation('swish')
+        weights_init = tf.keras.initializers.HeNormal()
+    elif activation == 'elu':
+        act_fun = tf.keras.layers.ELU
+        weights_init = tf.keras.initializers.HeNormal()
+    elif activation == 'tanh':
+        act_fun = tf.keras.activations.tanh
+        weights_init = tf.keras.initializers.GlorotNormal()
+    elif activation == 'sigmoid':
+        act_fun = tf.keras.activations.sigmoid
+        weights_init = tf.keras.initializers.GlorotNormal()
+    elif activation == 'linear':
+        act_fun = tf.keras.activations('linear')
+        weights_init = tf.keras.initializers.GlorotNormal()
+    else:
+        act_fun = tf.keras.layers.Activation('relu')
+        weights_init = tf.keras.initializers.HeNormal()
+        
+    # Padding & conv block
     if type(p) == str:
         net = tf.keras.layers.Conv2DTranspose(num_channels,kernel_size=f,strides=s,padding=p,use_bias=True,
                                               kernel_regularizer=tf.keras.regularizers.L1L2(l1=l1_reg,l2=l2_reg),
@@ -121,38 +164,54 @@ def conv2Dtranspose_block(X, num_channels, f, p, s, dropout, **kwargs):
         net = tf.keras.layers.Conv2D(num_channels,kernel_size=f,strides=s,output_padding=p,use_bias=True,
                                      kernel_regularizer=tf.keras.regularizers.L1L2(l1=l1_reg,l2=l2_reg))(X)
 
+    # Batch-Normalization block
     net = tf.keras.layers.BatchNormalization()(net)
 
-    if activation == 'leakyrelu':
-        rate = 0.2
-        net = tf.keras.layers.LeakyReLU(rate)(net)
-    elif activation == 'swish':
-        net = tf.keras.layers.Activation('swish')(net)
-    elif activation == 'elu':
-        net = tf.keras.layers.ELU(net)
-    elif activation == 'tanh':
-        net = tf.keras.activations.tanh(net)
-    elif activation == 'sigmoid':
-        net = tf.keras.activations.sigmoid(net)
-    elif activation == 'linear':
-        net = tf.keras.activations('linear')(net)
-    else:
-        net = tf.keras.layers.Activation('relu')(net)
+    # Activation function
+    net = act_fun(net)
+    
+    # Dropout layer
     net = tf.keras.layers.Dropout(dropout)(net)
 
     return net
 
 def dense_layer(X, units, activation, dropout, l1_reg, l2_reg):
 
-    net = tf.keras.layers.Dense(units=units,activation=None,kernel_regularizer=tf.keras.regularizers.L1L2(l1=l1_reg,l2=l2_reg))(X)
-    net = tf.keras.layers.BatchNormalization()(net)
+    # Activation layer
     if activation == 'leakyrelu':
-        rate = 0.1
-        net = tf.keras.layers.LeakyReLU(rate)(net)
+        rate = 0.2
+        act_fun = tf.keras.layers.LeakyReLU(rate)
+        weights_init = tf.keras.initializers.LecunNormal()
+    elif activation == 'swish':
+        act_fun = tf.keras.layers.Activation('swish')
+        weights_init = tf.keras.initializers.HeNormal()
     elif activation == 'elu':
-        net = tf.keras.layers.ELU()(net)
+        act_fun = tf.keras.activations.elu
+        weights_init = tf.keras.initializers.HeNormal()
+    elif activation == 'tanh':
+        act_fun = tf.keras.activations.tanh
+        weights_init = tf.keras.initializers.GlorotNormal()
+    elif activation == 'sigmoid':
+        act_fun = tf.keras.activations.sigmoid
+        weights_init = tf.keras.initializers.GlorotNormal()
+    elif activation == 'linear':
+        act_fun = tf.keras.activations('linear')
+        weights_init = tf.keras.initializers.GlorotNormal()
     else:
-        net = tf.keras.layers.Activation(activation)(net)
+        act_fun = tf.keras.layers.Activation('relu')
+        weights_init = tf.keras.initializers.HeNormal()
+    
+    # Dense layer
+    net = tf.keras.layers.Dense(units=units,activation=None,kernel_regularizer=tf.keras.regularizers.L1L2(l1=l1_reg,l2=l2_reg),
+                                kernel_initializer=weights_init)(X)
+    
+    # Batch-normalization layer
+    net = tf.keras.layers.BatchNormalization()(net)
+    
+    # Activation function
+    net = act_fun(net)
+
+    # Dropout layer
     net = tf.keras.layers.Dropout(dropout)(net)
 
     return net
@@ -160,13 +219,14 @@ def dense_layer(X, units, activation, dropout, l1_reg, l2_reg):
 def encoder_cnn(input_dim, latent_dim, hidden_layers, l2_reg=0.0, l1_reg=0.0, dropout=0.0, activation='relu'):
         
     X_input = tf.keras.layers.Input(shape=input_dim)
-    net = conv2D_block(X_input,num_channels=12,f=5,p='same',s=2,dropout=dropout,
-                       kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,'activation':activation,'res':None,'s_res':None})
+    net = conv2D_block(X_input,num_channels=12,f=5,p='same',s=2,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,
+                                                                        'activation':activation,'dropout':dropout,
+                                                                        'res':None,'s_res':None})
     res_net_1 = net
-    net = conv2D_block(net,num_channels=16,f=3,p='same',s=2,dropout=dropout,
-                       kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,'activation':activation,'res':None,'s_res':None})
-    net = conv2D_block(net,num_channels=32,f=3,p='same',s=1,dropout=dropout,
-                       kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,'activation':activation,'res':res_net_1,'s_res':2})
+    net = conv2D_block(net,num_channels=16,f=3,p='same',s=2,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,'activation':activation,
+                                                                    'dropout':dropout,'res':None,'s_res':None})
+    net = conv2D_block(net,num_channels=32,f=3,p='same',s=1,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,'activation':activation,
+                                                                    'dropout':dropout,'res':res_net_1,'s_res':2})
     net = tf.keras.layers.GlobalMaxPool2D()(net)
     '''
     for layer in hidden_layers:
@@ -186,9 +246,12 @@ def decoder_cnn(output_dim, latent_dim, hidden_layers, l2_reg=0.0, l1_reg=0.0, d
     X_input = tf.keras.layers.Input(shape=latent_dim)
     net = dense_layer(X_input,np.prod(dense_layer0),activation,dropout,l1_reg,l2_reg)
     net = tf.keras.layers.Reshape(dense_layer0)(net)
-    net = conv2Dtranspose_block(net,num_channels=f0//2,f=3,p='same',s=2,dropout=dropout,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,'activation':activation})
+    net = conv2Dtranspose_block(net,num_channels=f0//2,f=3,p='same',s=2,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,
+                                                                                'activation':activation,'dropout':dropout})
     net = tf.keras.layers.UpSampling2D()(net)
-    net = conv2D_block(net,num_channels=1,f=5,p='same',s=2,dropout=0.0,bn=False,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,'activation':'sigmoid','res':None,'s_res':None})
+    net = conv2D_block(net,num_channels=1,f=5,p='same',s=2,bn=False,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,
+                                                                            'activation':'sigmoid','dropout':0.0,
+                                                                            'res':None,'s_res':None})
 
     decoder = tf.keras.Model(inputs=X_input,outputs=net,name='decoder_cnn')
     #decoder.summary()

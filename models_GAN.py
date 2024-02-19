@@ -127,36 +127,48 @@ class Conv2D_block(tf.keras.Model):
             dropout = 0.0
             activation = 'relu'
 
-        # Apply padding
+        # Batch normalization layer
+        self.BatchNorm = tf.keras.layers.BatchNormalization()
+
+        # Activation layer
+        if activation == 'leakyrelu':
+            rate = 0.2
+            self.Activation = tf.keras.layers.LeakyReLU(rate)
+            weights_init = tf.keras.initializers.LecunNormal()
+        elif activation == 'swish':
+            self.Activation = tf.keras.layers.Activation('swish')
+            weights_init = tf.keras.initializers.HeNormal()
+        elif activation == 'elu':
+            self.Activation = tf.keras.activations.elu
+            weights_init = tf.keras.initializers.HeNormal()
+        elif activation == 'tanh':
+            self.Activation = tf.keras.activations.tanh
+            weights_init = tf.keras.initializers.GlorotNormal()
+        elif activation == 'sigmoid':
+            self.Activation = tf.keras.activations.sigmoid
+            weights_init = tf.keras.initializers.GlorotNormal()
+        elif activation == 'linear':
+            self.Activation = tf.keras.activations('linear')
+            weights_init = tf.keras.initializers.GlorotNormal()
+        else:
+            self.Activation = tf.keras.layers.Activation('relu')
+            weights_init = tf.keras.initializers.HeNormal()
+            
+        # Dropout layer
+        self.Dropout = tf.keras.layers.Dropout(dropout)
+        
+        # Padding & convolutional block
         if padding == 'same':
             self.Padding = tf.keras.layers.ZeroPadding2D(0)
             self.Conv2D = tf.keras.layers.Conv2D(num_channels,kernel_size,stride,padding='same',use_bias=True,
                                                  kernel_regularizer=tf.keras.regularizers.L1L2(l1=self.l1_reg,l2=self.l2_reg),
-                                                 kernel_initializer='glorot_normal')
+                                                 kernel_initializer=weights_init)
         elif type(padding) == int:
             self.Padding = tf.keras.layers.ZeroPadding2D(padding)
             self.Conv2D = tf.keras.layers.Conv2D(num_channels,kernel_size,stride,padding='valid',use_bias=True,
                                                  kernel_regularizer=tf.keras.regularizers.L1L2(l1=self.l1_reg,l2=self.l2_reg),
-                                                 kernel_initializer='glorot_normal')
-
-        self.BatchNorm = tf.keras.layers.BatchNormalization()
-
-        if activation == 'leakyrelu':
-            rate = 0.2
-            self.Activation = tf.keras.layers.LeakyReLU(rate)
-        elif activation == 'swish':
-            self.Activation = tf.keras.layers.Activation('swish')
-        elif activation == 'elu':
-            self.Activation = tf.keras.activations.elu
-        elif activation == 'tanh':
-            self.Activation = tf.keras.activations.tanh
-        elif activation == 'sigmoid':
-            self.Activation = tf.keras.activations.sigmoid
-        elif activation == 'linear':
-            self.Activation = tf.keras.activations('linear')
-        else:
-            self.Activation = tf.keras.layers.Activation('relu')
-        self.Dropout = tf.keras.layers.Dropout(dropout)
+                                                 kernel_initializer=weights_init)
+                                                 
 
     def __call__(self, X):
 
@@ -183,28 +195,41 @@ class Conv2DTranspose_block(tf.keras.Model):
             self.l1_reg = 0.0
             dropout = parameters['dropout']
             activation = 'relu'
-
-        self.Conv2DTranspose = tf.keras.layers.Conv2DTranspose(num_channels,kernel_size,stride,padding='same',
-                                                               kernel_regularizer=tf.keras.regularizers.L1L2(l1=self.l1_reg,l2=self.l2_reg),
-                                                               kernel_initializer='glorot_normal')
+    
+        # Batch normalization layer
         self.BatchNorm = tf.keras.layers.BatchNormalization()
 
+        # Activation layer
         if activation == 'leakyrelu':
             rate = 0.2
             self.Activation = tf.keras.layers.LeakyReLU(rate)
+            weights_init = tf.keras.initializers.LecunNormal()
         elif activation == 'swish':
             self.Activation = tf.keras.layers.Activation('swish')
+            weights_init = tf.keras.initializers.HeNormal()
         elif activation == 'elu':
             self.Activation = tf.keras.activations.elu
+            weights_init = tf.keras.initializers.HeNormal()
         elif activation == 'tanh':
             self.Activation = tf.keras.activations.tanh
+            weights_init = tf.keras.initializers.GlorotNormal()
         elif activation == 'sigmoid':
             self.Activation = tf.keras.activations.sigmoid
+            weights_init = tf.keras.initializers.GlorotNormal()
         elif activation == 'linear':
             self.Activation = tf.keras.activations('linear')
+            weights_init = tf.keras.initializers.GlorotNormal()
         else:
             self.Activation = tf.keras.layers.Activation('relu')
+            weights_init = tf.keras.initializers.HeNormal()
+        
+        # Dropout layer
         self.Dropout = tf.keras.layers.Dropout(dropout)
+        
+        # Convolutional layer
+        self.Conv2DTranspose = tf.keras.layers.Conv2DTranspose(num_channels,kernel_size,stride,padding='same',
+                                                               kernel_regularizer=tf.keras.regularizers.L1L2(l1=self.l1_reg,l2=self.l2_reg),
+                                                               kernel_initializer=weights_init)
 
     def __call__(self, X):
 
@@ -221,18 +246,39 @@ class Dense_layer(tf.keras.Model):
         self.l1_reg = l1_reg
         self.l2_reg = l2_reg
 
-        self.Dense = tf.keras.layers.Dense(units=units,activation=None,kernel_initializer='glorot_normal',
-                                           kernel_regularizer=tf.keras.regularizers.L1L2(l1=self.l1_reg,l2=self.l2_reg))
-        self.Dropout = tf.keras.layers.Dropout(dropout)
-        self.BatchNorm = tf.keras.layers.BatchNormalization()
+        # Activation layer
         if activation == 'leakyrelu':
             rate = 0.2
             self.Activation = tf.keras.layers.LeakyReLU(rate)
+            weights_init = tf.keras.initializers.LecunNormal()
+        elif activation == 'swish':
+            self.Activation = tf.keras.layers.Activation('swish')
+            weights_init = tf.keras.initializers.HeNormal()
         elif activation == 'elu':
             self.Activation = tf.keras.activations.elu
+            weights_init = tf.keras.initializers.HeNormal()
+        elif activation == 'tanh':
+            self.Activation = tf.keras.activations.tanh
+            weights_init = tf.keras.initializers.GlorotNormal()
+        elif activation == 'sigmoid':
+            self.Activation = tf.keras.activations.sigmoid
+            weights_init = tf.keras.initializers.GlorotNormal()
+        elif activation == 'linear':
+            self.Activation = tf.keras.activations('linear')
+            weights_init = tf.keras.initializers.GlorotNormal()
         else:
-            self.Activation = tf.keras.layers.Activation(activation)
-
+            self.Activation = tf.keras.layers.Activation('relu')
+            weights_init = tf.keras.initializers.HeNormal()
+            
+        # Dropout layer
+        self.Dropout = tf.keras.layers.Dropout(dropout)
+        
+        # Batch normalization layer
+        self.BatchNorm = tf.keras.layers.BatchNormalization()
+            
+        # Dense layer
+        self.Dense = tf.keras.layers.Dense(units=units,activation=None,kernel_initializer=weights_init,
+                                           kernel_regularizer=tf.keras.regularizers.L1L2(l1=self.l1_reg,l2=self.l2_reg))
     def call(self, X):
 
         net = self.Dense(X)
@@ -348,9 +394,11 @@ class ConditionalDiscriminator(tf.keras.Model):
         self.Conv2D_1 = Conv2D_block(num_channels=64,kernel_size=5,padding='same',stride=2,
                                      kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,'dropout':dropout,'activation':activation})
         self.Conv2D_2 = Conv2D_block(num_channels=128,kernel_size=3,padding='same',stride=2,
+                                     kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,'dropout':dropout,'activation':activation})        
+        self.Conv2D_3 = Conv2D_block(num_channels=128,kernel_size=3,padding='same',stride=2,
                                      kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,'dropout':dropout,'activation':activation})
         self.Pool = tf.keras.layers.GlobalMaxPool2D()
-        self.Dense_1 = Dense_layer(64,activation,l1_reg,l2_reg,dropout)
+        self.Dense_1 = Dense_layer(32,activation,l1_reg,l2_reg,dropout)
         self.Dense_2 = Dense_layer(2*latent_dim,activation,l1_reg,l2_reg,dropout)
         self.Dense_3 = Dense_layer(1,'sigmoid',l1_reg,l2_reg,0.0)
 
@@ -358,6 +406,7 @@ class ConditionalDiscriminator(tf.keras.Model):
         'Conv2D': [
         self.Conv2D_1,
         self.Conv2D_2,
+        self.Conv2D_3,
         ],
         'Dense':[
         self.Dense_1,
@@ -426,6 +475,7 @@ class ConditionalDiscriminator(tf.keras.Model):
 
         net_1 = self.Conv2D_1(X)
         net_1 = self.Conv2D_2(net_1)
+        net_1 = self.Conv2D_3(net_1)
         net_1 = self.Pool(net_1)
         net_1 = self.Dense_1(net_1)
         net_2 = self.Dense_2(t)
@@ -444,8 +494,8 @@ class Generator(tf.keras.Model):
         filt_in = 128
         f = 4
         s = 2
-        fh = int(input_dim[0]/(2*s))
-        fw = int(input_dim[1]/(2*s))
+        fh = int(input_dim[0]/(4*s))
+        fw = int(input_dim[1]/(4*s))
         fc = 32
         self.Dense = Dense_layer(fh*fw*fc,activation,l1_reg,l2_reg,dropout)
         self.Reshape = tf.keras.layers.Reshape((fh,fw,fc))
@@ -479,6 +529,7 @@ class Generator(tf.keras.Model):
         ]
 
     def set_up_training_state(self):
+    
         def set_up_conv2dtranspose_block(block, l1, l2, dropout):
 
             block.Conv2DTranspose.kernel_regularizer.l1 = l1
@@ -550,6 +601,7 @@ class Generator(tf.keras.Model):
         net = self.Reshape(net)
         net = self.Conv2DTranspose_1(net)
         net = self.Conv2DTranspose_2(net)
+        net = self.Conv2DTranspose_3(net)
         net = self.Conv2D(net)
 
         return net
